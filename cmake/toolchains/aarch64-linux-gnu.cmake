@@ -1,0 +1,35 @@
+set(CMAKE_SYSTEM_NAME Linux)
+set(CMAKE_SYSTEM_PROCESSOR aarch64)
+
+set(CMAKE_C_COMPILER aarch64-linux-gnu-gcc CACHE FILEPATH "ARM64 C compiler")
+set(CMAKE_ASM_COMPILER aarch64-linux-gnu-gcc CACHE FILEPATH "ARM64 assembler driver")
+set(CMAKE_AR aarch64-linux-gnu-ar CACHE FILEPATH "ARM64 archiver")
+set(CMAKE_RANLIB aarch64-linux-gnu-ranlib CACHE FILEPATH "ARM64 ranlib")
+set(CMAKE_STRIP aarch64-linux-gnu-strip CACHE FILEPATH "ARM64 strip")
+
+execute_process(COMMAND "${CMAKE_C_COMPILER}" -dumpmachine
+    RESULT_VARIABLE compiler_result OUTPUT_VARIABLE compiler_triple
+    OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+if(NOT compiler_result EQUAL 0 OR NOT compiler_triple MATCHES "^aarch64.*linux-gnu")
+    message(FATAL_ERROR "ARM64 cross compiler unavailable or has wrong target: ${CMAKE_C_COMPILER} (${compiler_triple})")
+endif()
+
+if(DEFINED ENV{SEEDLESS_TARGET_SYSROOT} AND NOT "$ENV{SEEDLESS_TARGET_SYSROOT}" STREQUAL "")
+    file(REAL_PATH "$ENV{SEEDLESS_TARGET_SYSROOT}" SEEDLESS_TARGET_SYSROOT)
+    if(NOT IS_DIRECTORY "${SEEDLESS_TARGET_SYSROOT}/usr/include" OR
+       NOT IS_DIRECTORY "${SEEDLESS_TARGET_SYSROOT}/usr/lib" AND
+       NOT IS_DIRECTORY "${SEEDLESS_TARGET_SYSROOT}/lib")
+        message(FATAL_ERROR "SEEDLESS_TARGET_SYSROOT does not look like a Linux target root: ${SEEDLESS_TARGET_SYSROOT}")
+    endif()
+    set(CMAKE_SYSROOT "${SEEDLESS_TARGET_SYSROOT}")
+    set(CMAKE_FIND_ROOT_PATH "${SEEDLESS_TARGET_SYSROOT}")
+else()
+    set(CMAKE_FIND_ROOT_PATH /usr/aarch64-linux-gnu)
+endif()
+
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+

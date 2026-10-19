@@ -1,0 +1,7 @@
+LZMA SDK 9.20
+
+The LZMA SDK 9.20 C source identifies its copyright as:
+
+  Igor Pavlov : Public domain
+
+The upstream source notice is in C/7zVersion.h.

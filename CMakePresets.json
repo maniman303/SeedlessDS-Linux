@@ -1,0 +1,50 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 28,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "linux-arm64-cross",
+      "displayName": "ARM64 Linux cross build (Ubuntu amd64)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/linux-arm64-cross",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/aarch64-linux-gnu.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "SEEDLESS_PRESET": "linux-arm64-cross"
+      }
+    },
+    {
+      "name": "linux-arm64-native",
+      "displayName": "ARM64 Linux native build",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/linux-arm64-native",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "SEEDLESS_PRESET": "linux-arm64-native"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "linux-arm64-cross",
+      "configurePreset": "linux-arm64-cross"
+    },
+    {
+      "name": "linux-arm64-native",
+      "configurePreset": "linux-arm64-native"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "linux-arm64-native",
+      "configurePreset": "linux-arm64-native",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

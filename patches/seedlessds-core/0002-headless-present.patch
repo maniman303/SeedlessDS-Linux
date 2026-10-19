@@ -1,0 +1,120 @@
+--- a/src/core/nds_api.c
++++ b/src/core/nds_api.c
+@@ -24,7 +24,7 @@
+     g->api_level = api_level;
+     g->script_overrides_high = script_overrides_high;
+ 
+-    magic = (uint64_t)(uintptr_t)sym_libc_glViewport;
++    magic = FRONTEND_BOOT_KEY;
+     magic ^= FRONTEND_BOOT_KEY;
+     memcpy(g->rom_path + FRONTEND_BOOT_WORD_OFFSET, &magic, sizeof magic);
+     static const uint32_t config_defaults[FRONTEND_CONFIG_WORDS] = { 1u, 0u, 7u, 7u };
+@@ -34,7 +34,7 @@
+     g->machine = mirror_get_fixed_page_ptr();
+     g->maps_dump_enabled = 0;
+ 
+-    video_out_gl_context_init();
++    if (video_out_gl_context_init() != 0) return NULL;
+     return g->machine;
+ }
+ 
+@@ -184,17 +184,9 @@
+     info->notice = (word & NDS_FRAME_NOTICE) != 0;
+ }
+ 
+-void nds_signal_screen(nds_t *nds)
+-{
+-    (void)nds;
+-    platform_doublebuffer_signal();
+-}
+-
+-void nds_wait_screen(nds_t *nds)
+-{
+-    (void)nds;
+-    platform_doublebuffer_wait();
+-}
++void nds_signal_screen(nds_t *nds) { (void)nds; }
++
++void nds_wait_screen(nds_t *nds) { (void)nds; }
+ 
+ int nds_state_save(nds_t *nds, int slot)
+ {
+--- a/src/frontend/video_out.c
++++ b/src/frontend/video_out.c
+@@ -233,72 +233,10 @@
+ void video_out_upload_screen_textures(uint32_t texture_first, uint32_t texture_second,
+                         uint32_t idx)
+ {
+-
+-    if (VIDEO_OUT_GL->page_memory == NULL)
+-        return;
+-
+-    recon_native_read();
+-    uint64_t step_screen = recon_native ? (uint64_t)RECON_SCREEN_BYTES : (uint64_t)VIDEO_OUT_GL_SCREEN_PAGE_BYTES;
+-
+-    nds_platform_default()->threads.mutex_lock(VIDEO_OUT_GL->mutex);
+-
+-    uint32_t bit = idx & 1u;
+-    uint32_t other_bit = bit ^ 1u;
+-    uint32_t selector = VIDEO_OUT_GL->page_parity;
+-    uint32_t selector_table = (~selector) & 1u;
+-    uint32_t first_level = VIDEO_OUT_GL->screen_mode[bit];
+-    uint32_t level_second = VIDEO_OUT_GL->screen_mode[other_bit];
+-    uint32_t request = VIDEO_OUT_GL->upload_request;
+-    const uint8_t *page_pixels = (const uint8_t *)VIDEO_OUT_GL->page[selector_table];
+-    uint8_t *snapshot = upload_snapshot_reserve(2u * (size_t)step_screen);
+-    if (snapshot) {
+-        if (request & 1u) memcpy(snapshot + (size_t)bit * step_screen, page_pixels + (size_t)bit * step_screen, (size_t)step_screen);
+-        if (request & 2u) memcpy(snapshot + (size_t)other_bit * step_screen, page_pixels + (size_t)other_bit * step_screen, (size_t)step_screen);
+-    }
+-    VIDEO_OUT_GL->upload_request = 0;
+-
+-    nds_platform_default()->threads.mutex_unlock(VIDEO_OUT_GL->mutex);
+-
+-    const uint8_t *base_pixels = snapshot ? snapshot : page_pixels;
+-    ((fn_bind)sym_libc_glBindTexture)(0x0de1u, texture_first);
+-
+-    if ((request & 1u) != 0) {
+-        uint32_t type = VIDEO_OUT_GL->gl_type;
+-        uint32_t format = VIDEO_OUT_GL->gl_format;
+-        uint32_t dimension = first_level + 1u;
+-        uint32_t n = (recon_native && dimension >= 2u)
+-                     ? recon_scale_output() : dimension;
+-        uint32_t width = n << 8;
+-        uint32_t height = (n + (n << 1)) << 6;
+-        const void *pixels = base_pixels + (uint64_t)bit * step_screen;
+-
+-        ((fn_sub)sym_libc_glTexSubImage2D)(0x0de1u, 0, 0, 0,
+-                                                  (int)width, (int)height,
+-                                                  format, type, pixels);
+-    }
+-
+-    ((fn_draw)sym_libc_glDrawArrays)(4u, 0, 6);
+-
+-    if (texture_second != 0) {
+-        ((fn_bind)sym_libc_glBindTexture)(0x0de1u, texture_second);
+-
+-        if ((request & 2u) != 0) {
+-            uint32_t type = VIDEO_OUT_GL->gl_type;
+-            uint32_t format = VIDEO_OUT_GL->gl_format;
+-            uint32_t dimension = level_second + 1u;
+-            uint32_t n = (recon_native && dimension >= 2u)
+-                         ? recon_scale_output() : dimension;
+-            uint32_t width = n << 8;
+-            uint32_t height = (n + (n << 1)) << 6;
+-            const void *pixels = base_pixels + (uint64_t)other_bit * step_screen;
+-
+-            ((fn_sub)sym_libc_glTexSubImage2D)(0x0de1u, 0, 0, 0,
+-                                                      (int)width, (int)height,
+-                                                      format, type, pixels);
+-        }
+-
+-        ((fn_draw)sym_libc_glDrawArrays)(4u, 6, 6);
+-    }
++    /* Software rendering and snapshots remain available; there is no display. */
++    (void)texture_first;
++    (void)texture_second;
++    (void)idx;
+ }
+ #define AXIS_OFF       0x3e6f0
+ #define MODE_OFF      171

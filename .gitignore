@@ -1,0 +1,29 @@
+# Generated builds, dependency caches, staged upstream sources and validation evidence
+/build/
+/cmake-build-*/
+/out/
+/bin/
+/obj/
+*.o
+*.a
+*.so
+*.so.*
+*.exe
+
+# Developer-local device settings and proprietary runtime assets
+/.device.local
+/.device.local.*
+/runtime-assets/
+*.nds
+*.srl
+*.gba
+*.bios
+*.firmware
+
+# Editor and temporary files
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vscode/
+.idea/

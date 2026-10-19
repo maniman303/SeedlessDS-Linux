@@ -1,6 +1,6 @@
 # Quickstart Validation Guide
 
-These commands describe the implementation to be built; scripts and presets are planned artifacts, not available yet. Run from the repository root.
+These commands exercise the implementation. Run from the repository root; the current verified host is Ubuntu 26.04 amd64 for the cross build.
 
 ## Prepare Ubuntu locally
 
@@ -40,7 +40,7 @@ mkdir -p ./run-data
 env -u DISPLAY -u WAYLAND_DISPLAY ./seedlessds-headless --data-dir ./run-data --frames 120 /path/to/test.nds
 ```
 
-Expect `result=completed frames=120 requested=120`, exit 0, no windows, sound or microphone access. Repeat three times for each artifact from native and cross builds. Also run `--frames 1` to catch startup/target ordering errors. Missing display and sound services must not affect execution. Prove frame progress derives from scheduler boundaries and not external `nds_run_frame` calls; retain adapter device-access audit evidence.
+Expect `result=completed frames=120 requested=120`, exit 0, no windows, sound or microphone access. Repeat three times for each artifact from native and cross builds. Also run `--frames 1` to catch startup/target ordering errors. Missing display and sound services must not affect execution. The runner arms `nds_control_run_to(N)` before the worker starts and reports the control API frame count. Retain adapter device-access audit evidence.
 
 Start without `--frames`, interrupt with Ctrl-C, and expect an interruption record and exit 130 within five seconds. Repeat three times and verify no process remains. Test SIGTERM similarly, expecting exit 143. Exercise termination during loading and at the target pause; report any workload that cannot meet the bound.
 

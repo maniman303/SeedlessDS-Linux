@@ -1,0 +1,26 @@
+--- a/third_party/CMakeLists.txt
++++ b/third_party/CMakeLists.txt
+@@ -74,6 +74,23 @@
+         set(ENABLE_${feature} OFF CACHE BOOL "" FORCE)
+     endforeach()
+     set(ENABLE_ZLIB ON CACHE BOOL "" FORCE)
++    # Avoid optional probes that misidentify unavailable APIs in cross sysroots.
++    set(LIBMD_FOUND FALSE CACHE INTERNAL "libmd is not needed by selected archive readers" FORCE)
++    set(HAVE__FSEEKI64 FALSE CACHE INTERNAL "AArch64 Linux uses fseeko" FORCE)
++    set(_archive_cmake "${SEEDLESS_LIBARCHIVE_DIR}/CMakeLists.txt")
++    file(READ "${_archive_cmake}" _archive_source)
++    set(_zlib_find "FIND_PACKAGE(ZLIB 1.2.1)")
++    set(_zlib_find_patched "SET(ZLIB_FOUND TRUE)\nSET(ZLIB_INCLUDE_DIR \"${SEEDLESS_ZLIB_INCLUDE_DIR}\")\nSET(ZLIB_LIBRARY zlibstatic)\nSET(ZLIB_LIBRARIES zlibstatic)")
++    string(FIND "${_archive_source}" "${_zlib_find}" _zlib_find_pos)
++    if(NOT _zlib_find_pos EQUAL -1)
++        string(REPLACE "${_zlib_find}" "${_zlib_find_patched}" _archive_source "${_archive_source}")
++    else()
++        string(FIND "${_archive_source}" "SET(ZLIB_FOUND TRUE)" _zlib_patched_pos)
++        if(_zlib_patched_pos EQUAL -1)
++            message(FATAL_ERROR "Pinned libarchive ZLIB lookup changed; review the compatibility patch")
++        endif()
++    endif()
++    file(WRITE "${_archive_cmake}" "${_archive_source}")
+     add_subdirectory("${SEEDLESS_LIBARCHIVE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/libarchive" EXCLUDE_FROM_ALL)
+     get_target_property(archive_sources archive_static SOURCES)
+     set(reader_sources)

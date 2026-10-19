@@ -1,0 +1,89 @@
+--- a/src/platform/posix/files_posix.c
++++ b/src/platform/posix/files_posix.c
+@@ -2,6 +2,7 @@
+ #include <stdlib.h>
+ #include <string.h>
+ #include <stdint.h>
++#include <errno.h>
+ #include <fcntl.h>
+ #include <unistd.h>
+ #include <sys/stat.h>
+@@ -15,13 +16,16 @@
+     return (r && *r) ? r : ".";
+ }
+ 
+-static void resolve(char *dest, size_t size, const char *path)
++static int resolve(char *dest, size_t size, const char *path)
+ {
+     const char *f = path ? path : "";
+     const size_t n = sizeof(DATA_SYSTEM_DIR "/") - 1;
++    int written;
+     if (!strncmp(f, DATA_SYSTEM_DIR "/", n)) f += n;
+-    if (f[0] == '/') snprintf(dest, size, "%s", f);
+-    else             snprintf(dest, size, "%s/%s", root(), f);
++    if (f[0] == '/') written = snprintf(dest, size, "%s", f);
++    else             written = snprintf(dest, size, "%s/%s", root(), f);
++    if (written < 0 || (size_t)written >= size) { errno = ENAMETOOLONG; return -1; }
++    return 0;
+ }
+ 
+ static int open_flags_for_mode(const char *m)
+@@ -36,20 +40,23 @@
+     }
+ }
+ 
+-static void create_parents(const char *path)
++static int create_parents(const char *path)
+ {
+     char t[1024];
+-    snprintf(t, sizeof t, "%s", path);
++    int written = snprintf(t, sizeof t, "%s", path);
++    if (written < 0 || (size_t)written >= sizeof t) { errno = ENAMETOOLONG; return -1; }
+     char *bar = strrchr(t, '/');
+-    if (!bar) return;
++    if (!bar || bar == t) return 0;
+     *bar = 0;
+     for (char *p = t + 1; *p; p++)
+-        if (*p == '/') { *p = 0; mkdir(t, 0755); *p = '/'; }
+-    mkdir(t, 0755);
++        if (*p == '/') { *p = 0; if (mkdir(t, 0755) != 0 && errno != EEXIST) return -1; *p = '/'; }
++    if (mkdir(t, 0755) != 0 && errno != EEXIST) return -1;
++    return 0;
+ }
+ 
+ void files_descriptor_free(void **obj)
+ {
++    if (!obj) return;
+     free(obj[0]);
+     free(obj[2]);
+     free(obj);
+@@ -59,19 +66,22 @@
+ {
+     char complete[1024];
+     const char *mode = arg1 ? arg1 : "rb";
+-    resolve(complete, sizeof complete, arg0);
++    if (resolve(complete, sizeof complete, arg0) != 0) return NULL;
+ 
+     int flags = open_flags_for_mode(mode);
+-    if (flags & O_CREAT) create_parents(complete);
++    if ((flags & O_CREAT) && create_parents(complete) != 0) return NULL;
+ 
+     int fd = open(complete, flags, 0644);
+     if (fd < 0) return 0;
+ 
+-    unsigned char *r = (unsigned char *)malloc(24);
+-    if (!r) { close(fd); return 0; }
+-    *(void **)(r + 0)     = strdup(complete);
+-    *(uint32_t *)(r + 8)  = (uint32_t)fd;
+-    *(void **)(r + 16)    = strdup(complete);
++    unsigned char *r = (unsigned char *)calloc(1, 24);
++    if (!r) { close(fd); return NULL; }
++    void *first = strdup(complete);
++    void *third = strdup(complete);
++    if (!first || !third) { free(first); free(third); free(r); close(fd); return NULL; }
++    *(void **)(r + 0) = first;
++    *(uint32_t *)(r + 8) = (uint32_t)fd;
++    *(void **)(r + 16) = third;
+     return r;
+ }
+ 

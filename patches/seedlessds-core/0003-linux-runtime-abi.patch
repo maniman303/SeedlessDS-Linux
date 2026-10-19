@@ -1,0 +1,101 @@
+--- a/src/core/nds_api.c
++++ b/src/core/nds_api.c
+@@ -9,6 +9,9 @@
+ #include "frontend/frontend.h"
+ #include "core_internals.h"
+ 
++extern void platform_set(const nds_platform_t *platform);
++extern void seedless_linux_video_shutdown(void);
++
+ 
+ #define FRONTEND_BOOT_KEY UINT64_C(0x1AB10BF4DBBE1F0F)
+ #define FRONTEND_BOOT_WORD_OFFSET (0x430 - 0x2c)
+@@ -19,7 +22,7 @@
+     frontend_t *g = FRONTEND;
+     uint64_t magic;
+ 
+-    (void)platform;
++    platform_set(platform);
+ 
+     g->api_level = api_level;
+     g->script_overrides_high = script_overrides_high;
+@@ -42,6 +45,8 @@
+ {
+     (void)nds;
+     nds_subsystem_shutdown_release_objects();
++    seedless_linux_video_shutdown();
++    platform_set(NULL);
+ }
+ 
+ void nds_reset(nds_t *nds)
+--- a/src/core/nds.c
++++ b/src/core/nds.c
+@@ -22,6 +22,7 @@
+ #include "mem_access.h"
+ static int (*core_mprotect)(void *, size_t, int);
+ static int (*core_setjmp)(void *);
++extern jmp_buf seedlessds_linux_fatal_jump;
+ 
+ int nds_start_game(nds_start_params_t *params) {
+     if (!core_mprotect) {
+@@ -76,7 +77,7 @@
+     video_out_gl_init_hook_noop();
+     nds_machine_reset(G);
+ 
+-    core_setjmp(((nds_t *)G)->fatal_jump);
++    core_setjmp(seedlessds_linux_fatal_jump);
+ 
+     if (ctl->restart_pending == 1) { ctl->restart_pending = 0; return 0; }
+ 
+--- a/src/frontend/input.c
++++ b/src/frontend/input.c
+@@ -14,6 +14,8 @@
+ #include "frontend/frontend.h"
+ #include "seedlessds/platform.h"
+ #include "core_internals.h"
++
++extern void seedless_linux_fatal_longjmp(int value);
+ #include "mem_access.h"
+ #include "seedlessds/control.h"
+ 
+@@ -89,7 +91,7 @@
+ 
+     if (extra) audio_out_restart_playback();
+ 
+-    ((fn_lj)sym_libc_longjmp)(g->machine->fatal_jump, 0);
++    seedless_linux_fatal_longjmp(0);
+ }
+ 
+ void input_poll_and_pause(uint8_t *ctx) {
+--- a/src/memory/mirror.c
++++ b/src/memory/mirror.c
+@@ -126,9 +126,8 @@
+     PLATFORM_AUDIO->restart_pending = 1;
+ 
+     {
+-        typedef void (*fn_longjmp)(void *, int);
+-        fn_longjmp p_longjmp = (fn_longjmp)sym_libc_longjmp;
+-        p_longjmp(nds_machine.fatal_jump, 0);
++        extern void seedless_linux_fatal_longjmp(int value);
++        seedless_linux_fatal_longjmp(0);
+     }
+ }
+ 
+--- a/src/memory/input_shared_region_create.c
++++ b/src/memory/input_shared_region_create.c
+@@ -6,13 +6,10 @@
+ #include "core_internals.h"
+ 
+ 
+-extern int32_t mirror_shm_create(const char *name, uint32_t size,
+-                                   int32_t level_api);
++extern int32_t seedless_linux_shared_region_create(const char *name, uint32_t size);
+ 
+ int32_t input_shared_region_create(const char *name, uint32_t size)
+ {
+ 
+-    int32_t level_api = (int32_t)FRONTEND->api_level;
+-
+-    return mirror_shm_create(name, size, level_api);
++    return seedless_linux_shared_region_create(name, size);
+ }

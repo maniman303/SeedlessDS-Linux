@@ -1,6 +1,6 @@
 # Build and Ubuntu Setup Contract
 
-## Tooling installer (planned)
+## Tooling installer
 
 ```text
 bash scripts/setup-ubuntu.sh --native [--check|--dry-run]
@@ -13,7 +13,7 @@ Common package set: `build-essential`, `cmake`, `ninja-build`, `git`, `pkg-confi
 
 Verify CMake >=3.28, Ninja, compiler target, assembler/linker, required commands, and a linked AArch64 executable inspected by readelf. Report host OS, versions and target triple. A cross probe is inspected, not executed on amd64. Setup is complete only when verification succeeds. Document that package installation is system-wide on the developer's local Ubuntu installation; project dependency sources/artifacts stay in ignored build/cache directories.
 
-## Build interface (planned)
+## Build interface
 
 ```text
 cmake --preset linux-arm64-native
