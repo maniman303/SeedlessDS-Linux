@@ -1,10 +1,10 @@
 {
-  "ai": "codex",
+  "ai": "copilot",
   "ai_skills": true,
   "allow_symlinks": false,
   "feature_numbering": "sequential",
   "here": false,
-  "integration": "codex",
-  "script": "ps",
+  "integration": "copilot",
+  "script": "sh",
   "speckit_version": "1.2.2.dev0"
 }
