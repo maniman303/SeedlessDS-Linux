@@ -27,7 +27,7 @@ All design unknowns are resolved below. Repository scripts are the authority for
 
 - Decision: Require existing device-local absolute ROM and writable data-root paths, supplied separately as CLI arguments. Default to 120 frames and a bounded remote timeout, preserving runner output and exit status. Do not upload or generate runtime assets implicitly. Verify final result record matches requested frames and zero runner exit before reporting success.
 - Rationale: Existing runner supports these inputs and deterministic scheduler bounds. A transport failure and application failure must remain distinguishable; obtain a separate remote wrapper exit marker, and treat absent marker/disconnect as unconfirmed execution.
-- Alternatives considered: An unbounded default risks unattended execution; a ROM directory in the device config avoids repeating a target path while leaving per-run `--rom` selection available. Existing `validate-headless.sh` is optional deeper validation, requiring Bash, ripgrep and timeout on the target; it is not required by this lightweight deployment path.
+- Alternatives considered: An unbounded default risks unattended execution; a ROM directory in the device config avoids repeating a target path while leaving per-run `--rom` selection available. Existing `validate-video.sh` is optional deeper validation, requiring Bash, ripgrep and timeout on the target; it is not required by this lightweight deployment path.
 
 ## Build documentation baseline
 

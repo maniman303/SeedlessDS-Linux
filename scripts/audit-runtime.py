@@ -18,13 +18,39 @@ def command(args):
     return result.stdout
 
 
+def validate_dependencies(needed, backend_requirements):
+    forbidden = re.compile(r'android|opensl|libegl|libgles|libgl\.so', re.I)
+    forbidden_names = sorted(name for name in needed if forbidden.search(name))
+    allowed = {
+        'libc.so.6', 'ld-linux-aarch64.so.1', 'libSDL2-2.0.so.0',
+        'libdl.so.2', 'libm.so.6', 'libpthread.so.0', 'librt.so.1',
+    }
+    unexpected = sorted(name for name in needed if name not in allowed)
+    if forbidden_names:
+        raise RuntimeError('forbidden platform dependency: ' + ', '.join(forbidden_names))
+    if unexpected:
+        raise RuntimeError('undeclared shared runtime dependency: ' + ', '.join(unexpected))
+    if 'libSDL2-2.0.so.0' not in needed:
+        raise RuntimeError('shared SDL2 runtime dependency is missing')
+    if not backend_requirements:
+        raise RuntimeError('no dynamically loaded SDL2 backend runtime requirements were declared')
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--binary', required=True, type=Path)
     parser.add_argument('--preset', required=True)
     parser.add_argument('--readelf', required=True)
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--sdl2-version', required=True)
+    parser.add_argument('--sdl2-backend-requirement', action='append', default=[])
     args = parser.parse_args()
+    match_version = re.match(r'^(\d+)\.(\d+)\.(\d+)', args.sdl2_version)
+    if not match_version:
+        raise RuntimeError(f'invalid target SDL2 version: {args.sdl2_version}')
+    version = tuple(int(part) for part in match_version.groups())
+    if version < (2, 0, 12):
+        raise RuntimeError(f'target SDL2 {args.sdl2_version} is older than required 2.0.12')
     binary = args.binary.resolve(strict=True)
     readelf = args.readelf
     header = command([readelf, '-h', str(binary)])
@@ -37,15 +63,10 @@ def main():
     needed = sorted(set(re.findall(r'Shared library: \[([^]]+)\]', dynamic)))
     version_names = sorted(set(re.findall(r'Name: (GLIBC_[0-9.]+)', versions)),
                            key=lambda x: tuple(int(n) for n in x.split('_')[1].split('.')))
-    forbidden = re.compile(r'android|opensl|libegl|libgles|libgl\.so', re.I)
-    forbidden_names = sorted(name for name in needed if forbidden.search(name))
-    unexpected = sorted(name for name in needed if name not in {'libc.so.6', 'ld-linux-aarch64.so.1'})
+    backend_requirements = sorted(set(args.sdl2_backend_requirement))
     if not machine or 'AArch64' not in machine.group(1):
         raise RuntimeError('ELF machine is not AArch64')
-    if forbidden_names:
-        raise RuntimeError('forbidden platform dependency: ' + ', '.join(forbidden_names))
-    if unexpected:
-        raise RuntimeError('undeclared shared runtime dependency: ' + ', '.join(unexpected))
+    validate_dependencies(needed, backend_requirements)
     if re.search(r'UND.*(__android_log_print|slCreateEngine|glViewport|glBindTexture)', undefined):
         raise RuntimeError('unresolved Android, OpenSL or OpenGL symbol remains')
     inventory = {
@@ -57,6 +78,14 @@ def main():
         'elf_machine': machine.group(1).strip(),
         'interpreter': interpreter.group(1) if interpreter else None,
         'shared_dependencies': needed,
+        'sdl2': {
+            'minimum_version': '2.0.12',
+            'target_version': args.sdl2_version,
+            'soname': 'libSDL2-2.0.so.0',
+            'linkage': 'shared',
+            'direct_runtime_dependencies': needed,
+            'dynamically_loaded_backend_requirements': backend_requirements,
+        },
         'maximum_glibc_symbol_version': version_names[-1] if version_names else None,
         'glibc_symbol_versions': version_names,
         'statically_embedded_application_libraries': [

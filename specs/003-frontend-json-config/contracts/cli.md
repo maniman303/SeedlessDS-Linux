@@ -1,8 +1,8 @@
 # Frontend CLI Contract
 
 ```text
-seedlessds-headless [--config PATH] [--save-dir DIR] [--frames N] [--] ROM
-seedlessds-headless --help
+seedlessds [--config PATH] [--save-dir DIR] [--frames N] [--] ROM
+seedlessds --help
 ```
 
 - `--config` selects the sole JSON source/creation destination. One occurrence; nonempty path.

@@ -73,7 +73,7 @@ scripts/
 ├── setup-ubuntu.sh                 # add/check debug prerequisites
 ├── prepare-core.sh                 # existing automatic configure prerequisite
 ├── audit-runtime.py                # existing ELF audit
-└── validate-headless.sh            # existing optional deeper native acceptance
+└── validate-video.sh            # existing optional deeper native acceptance
 tests/
 └── device-debug/
     └── test_debug_device.py         # new credential, quoting, failure and staging checks

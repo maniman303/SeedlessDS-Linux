@@ -23,6 +23,45 @@ class DiagnosticTailTests(unittest.TestCase):
         self.assertEqual(args.frontend_config, "/cfg/custom.json")
         self.assertEqual(args.save_dir, "")
         self.assertEqual(args.frames, 2)
+        self.assertIsNone(args.config)
+
+    def test_run_can_inherit_console_wayland_environment(self):
+        args = debug_device.root_parser().parse_args([
+            "run", "--binary", "runner", "--inventory", "inventory.json",
+            "--console-session",
+        ])
+        self.assertTrue(args.console_session)
+        self.assertEqual(
+            debug_device.parse_console_environment(
+                "DISPLAY=:0.0\nWAYLAND_DISPLAY=wayland-1\nXDG_RUNTIME_DIR=/run/user/0\n"),
+            {"DISPLAY": ":0.0", "WAYLAND_DISPLAY": "wayland-1",
+             "XDG_RUNTIME_DIR": "/run/user/0"},
+        )
+        with self.assertRaises(debug_device.Failure):
+            debug_device.parse_console_environment("DISPLAY=:0.0\n")
+
+    def test_frontend_arguments_are_separate_and_shell_quoted(self):
+        command = debug_device.frontend_launch_command(
+            "/storage/bin/seedlessds", "/cfg/custom file.json",
+            "/save dir;safe", 120, "/roms/a game.nds",
+        )
+        self.assertIn("--config '/cfg/custom file.json'", command)
+        self.assertIn("--save-dir '/save dir;safe'", command)
+        self.assertIn("--frames 120 '/roms/a game.nds'", command)
+        self.assertNotIn("--data-dir", command)
+        self.assertNotIn("--frontend-config", command)
+
+    def test_result_parser_accepts_only_exact_requested_completion(self):
+        self.assertEqual(
+            debug_device.completed_record("result=completed frames=120 requested=120\n", 120).group(0).strip(),
+            "result=completed frames=120 requested=120",
+        )
+        for output in (
+            "result=completed frames=119 requested=120\n",
+            "result=closed frames=119\n",
+            "result=failed frames=0 operation=video\n",
+        ):
+            self.assertIsNone(debug_device.completed_record(output, 120))
 
     def test_run_can_select_rom_from_configured_directory(self):
         parser = debug_device.root_parser()

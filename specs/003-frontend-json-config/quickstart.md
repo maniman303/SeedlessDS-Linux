@@ -26,7 +26,7 @@ Set paths to your existing ROM and binary; create an isolated home. Supply valid
 
 ```sh
 seedless_test_home=$(mktemp -d)
-seedless_bin="$(pwd)/build/linux-arm64-native/bin/seedlessds-headless"
+seedless_bin="$(pwd)/build/linux-arm64-native/bin/seedlessds"
 seedless_rom=/absolute/path/to/game.nds
 "$seedless_bin" --help
 env HOME="$seedless_test_home" "$seedless_bin"

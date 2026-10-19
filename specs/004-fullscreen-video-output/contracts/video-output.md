@@ -1,6 +1,6 @@
 # Video Configuration and Output Contract
 
-This contract refines [spec.md](../spec.md). It describes the feature after implementation; it does not imply the current headless runner already provides these interfaces.
+This contract refines [spec.md](../spec.md). It describes the feature after implementation; it does not imply the current frontend already provides these interfaces.
 
 ## Configuration
 
@@ -28,7 +28,7 @@ This is a video fragment, not a complete bootable configuration. All other confi
 
 ## Launch selection
 
-Keep the existing executable filename `seedlessds-headless` for compatibility; it now presents fullscreen video for normal gameplay. After feature 003's foundation is implemented, the frontend configuration override is spelled `--config PATH`; the existing ROM, help, `--frames N`, and configured save behavior continue under that feature's contract. Do not add a `--headless` escape hatch or retain `--data-dir` as a substitute for feature 003 configuration.
+Name the executable `seedlessds`; it presents fullscreen video for normal gameplay. After feature 003's foundation is implemented, the frontend configuration override is spelled `--config PATH`; the existing ROM, help, `--frames N`, and configured save behavior continue under that feature's contract. Do not add a `--headless` escape hatch or retain `--data-dir` as a substitute for feature 003 configuration.
 
 For the existing device deployment helper only, `--frontend-config PATH` means an existing configuration on the target to forward to the frontend's `--config`. Its existing `--config` continues to mean private device connection settings. The two paths must not be confused or copied into diagnostic records as credentials.
 

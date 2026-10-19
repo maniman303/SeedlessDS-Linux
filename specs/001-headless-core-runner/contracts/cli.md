@@ -1,8 +1,8 @@
 # CLI Contract
 
 ```text
-seedlessds-headless --help
-seedlessds-headless [--frames N] [--data-dir DIR] ROM
+seedlessds --help
+seedlessds [--frames N] [--data-dir DIR] ROM
 ```
 
 `--help` succeeds without a ROM or initialized core. One ROM is required for execution; use `--` before a path beginning with a dash. `--frames` accepts decimal integers from 1 through UINT64_MAX; omission runs until interrupted. `--data-dir` defaults to the current working directory and selects the core data root; ROM resolution remains relative to the invocation directory. Reject duplicate options, unknown options, extra operands and invalid values with usage diagnostics.

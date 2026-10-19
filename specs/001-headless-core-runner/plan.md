@@ -92,7 +92,7 @@ patches/seedlessds-core/
 scripts/
 ├── setup-ubuntu.sh
 ├── prepare-core.sh
-└── validate-headless.sh
+└── validate-video.sh
 tests/
 ├── abi/
 ├── adapters/

@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "config_json.h"
+#include "video/layout.h"
 
 typedef struct seedless_config_visuals {
     int threaded_3d;
@@ -27,6 +28,7 @@ typedef struct seedless_config_user {
 typedef struct seedless_config_emulation { char *save_dir; } seedless_config_emulation_t;
 typedef struct seedless_config {
     seedless_config_visuals_t visuals;
+    seedless_video_preferences_t video;
     seedless_config_firmware_t firmware;
     seedless_config_user_t user;
     seedless_config_emulation_t emulation;

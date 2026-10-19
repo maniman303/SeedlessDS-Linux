@@ -1,6 +1,6 @@
 # SeedlessDS-Core options inventory
 
-This inventory describes the settings and runtime capabilities available to a Linux frontend in the pinned `external/SeedlessDS-Core` source. It separates core support from frontend work: the repository's `seedlessds-headless` program is a bounded runner, not an interactive emulator frontend. It accepts a ROM plus Linux JSON config/save options, validates BIOS files, and discards audio output; fullscreen video is covered separately by the video-output feature.
+This inventory describes the settings and runtime capabilities available to a Linux frontend in the pinned `external/SeedlessDS-Core` source. The `seedlessds` executable now runs a fullscreen SDL2 video frontend for gameplay. It accepts a ROM plus Linux JSON config/save options, validates BIOS files, and discards audio output and microphone input.
 
 ## Support levels
 
@@ -39,15 +39,15 @@ This inventory describes the settings and runtime capabilities available to a Li
 
 ## 3. Display and layout
 
-The public core API gives the frontend top/bottom screen buffers, RGBA conversion, screenshots, frame size, draw/compose calls, present mode, screen snapshots, and internal resolution controls. A Linux SDL presentation loop, window and renderer are frontend responsibilities.
+The public core API gives the frontend top/bottom screen buffers, RGBA conversion, screenshots, frame size, draw/compose calls, present mode, screen snapshots, and internal resolution controls. The Linux frontend uses the public RGBA conversion with an owned latest-pair mailbox and presents through SDL2. Normal gameplay is always fullscreen; SDL windows, renderers, and textures remain frontend responsibilities.
 
 | Option | Support and practical choices |
 |---|---|
-| Dual-screen layout | Core screen mode supports a wide mode and frontend script overrides for layout/swap/overlay. Frontend can offer vertical stack, side-by-side, or single screen if composed from buffers. |
-| Screen selection / swap | Screen-swap override and two screen buffers are present. Offer top only, bottom only, both, and swap where the layout supports it. |
-| Scale and aspect | Core reports frame dimensions/scale; SDL frontend should fit integer or fractional scaling while preserving DS screen aspect ratio. |
+| Dual-screen layout | Core screen mode supports a wide mode and frontend script overrides for layout/swap/overlay. The current Linux output presents two complete 256×192 images on separate fullscreen outputs, or uses vertical/horizontal slots on one output. |
+| Screen selection / swap | Core has two screen buffers. The Linux frontend displays both; `video.swap_screens` exchanges their destinations without changing core identities. |
+| Scale and aspect | The Linux frontend fits the largest whole-number scale in renderer pixels, centers with black borders, uses nearest sampling, and disables blending. It rejects layouts that cannot fit at 1x. |
 | Rotation | Script rotation field/API is present; mapping of supported rotations to ordinary frontend controls is not fully established. |
-| Fullscreen / window size | OS/window policy; no core setting. SDL implementation can offer windowed/fullscreen and resolution or scale choices. |
+| Fullscreen / window size | OS/window policy; no core setting. Linux gameplay always uses SDL fullscreen-desktop windows on selected display indices 0 and 1; it has no windowed option. |
 | Filtering / shaders | Core has FX/ext-FX recipe APIs and shader-related code, but Linux headless stubs reject shader recipe loads. Renderer/backend work is required before offering filters. |
 | Overlays / OSD | Core has script overlay override and a performance word API. Menus, FPS/status display, notifications and controller hints belong in frontend. |
 | Capture | Core exposes screenshot and snapshot-to-slot/file calls. File dialogs, image encoding/extension, and capture destination policy are frontend concerns; inspect exact output pixel formats before selecting formats. |
@@ -117,13 +117,12 @@ Use global defaults with optional per-game overrides. Validate settings when loa
 
 ## 9. Current project gaps before presenting this as an emulator UI
 
-1. Replace headless video/audio sinks with SDL video and audio backends while preserving headless operation where useful.
-2. Add an application lifecycle and frontend UI: library, setup/asset checks, settings, in-game menu and status reporting.
-3. Implement keyboard/gamepad/touch mapping and optionally sensors/rumble.
-4. Expose supported configuration fields through a typed frontend config model instead of hard-coding packed bit positions in UI code.
-5. Add safe per-game and global config persistence and migrations.
-6. Add save management around the existing `.sav`/`.dsv` battery files and `.dss` state slots.
-7. Verify uncertain config ranges, performance options, presentation modes, and firmware/RTC semantics against core implementation and device testing before assigning user-facing labels.
+1. Add a full application UI: library, setup/asset checks, in-game menus, controls, and status reporting.
+2. Implement keyboard/gamepad/touch mapping and optionally sensors/rumble.
+3. Add audio playback and microphone capture backends.
+4. Add safe per-game configuration persistence and migrations.
+5. Add save management around battery saves and savestate slots.
+6. Verify remaining core settings and target-specific display/backend behavior with device testing before assigning new user-facing choices.
 
 ## Source references
 
@@ -133,9 +132,9 @@ Use global defaults with optional per-game overrides. Validate settings when loa
 - Input/runtime handling: `src/frontend/input.c`, `src/frontend/input_record.c`.
 - Save-state format and slots: `src/core/state_format.h`, `src/core/state.c`.
 - Cartridge save format: `src/cart/cart.c`, `src/cart/backup.c`.
-- Current Linux limitations: `src/platform/linux/headless_video.c`, `src/platform/linux/headless_audio.c`, and this repository's `src/runner.c`.
+- Current Linux limitations: `src/platform/linux/software_video.c` retains the core's software framebuffer ABI; `src/platform/linux/headless_audio.c` discards audio; this repository's `src/runner.c` does not yet provide a library UI or input mapping.
 
 
 ## Implemented Linux frontend configuration (SeedlessDS-Linux)
 
-The frontend now exposes the bounded subset described in [`specs/003-frontend-json-config/contracts/configuration.md`](../specs/003-frontend-json-config/contracts/configuration.md): 3D threading/render toggles, explicit ARM7/ARM9 BIOS paths, optional firmware path, DS nickname/birthday month/day/color, and battery-save directory. The file defaults to `$HOME/.config/seedlessds/config.json`; CLI `--config` selects an authoritative alternative and `--save-dir` overrides the JSON save directory. JIT, real-time clock and raw `.sav` are fixed frontend policies. Other core features in this inventory remain unexposed.
+The frontend exposes the bounded subset described in [`specs/003-frontend-json-config/contracts/configuration.md`](../specs/003-frontend-json-config/contracts/configuration.md): 3D threading/render toggles, explicit ARM7/ARM9 BIOS paths, optional firmware path, DS nickname/birthday month/day/color, and battery-save directory. Fullscreen output adds `video.display_mode` (`auto`, `dual_screen`, or `single_screen`), `video.swap_screens` (default false), and `video.single_screen_layout` (`vertical` by default or `horizontal`). These are the only configurable video output preferences; fullscreen and integer nearest scaling are fixed. The file defaults to `$HOME/.config/seedlessds/config.json`; CLI `--config` selects an authoritative alternative and `--save-dir` overrides the JSON save directory. JIT, real-time clock and raw `.sav` are fixed frontend policies. Other core features in this inventory remain unexposed.

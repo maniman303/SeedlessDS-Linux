@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deploy and run the headless ARM64 runner on a configured Linux console."""
+"""Deploy and run the fullscreen ARM64 frontend on a configured Linux console."""
 from __future__ import annotations
 
 import argparse
@@ -138,6 +138,8 @@ def root_parser():
             p.add_argument("--save-dir")
             p.add_argument("--frames", type=int, default=120)
             p.add_argument("--timeout", type=int, default=30)
+            p.add_argument("--console-session", action="store_true",
+                           help="inherit display variables from the active EmulationStation process")
     return parser
 
 
@@ -163,6 +165,22 @@ done
 exit 1
 '''
     return "sh -c " + shlex.quote(script) + " sh " + shlex.quote(directory)
+
+
+def frontend_launch_command(executable, frontend_config, save_dir, frames, rom):
+    parts = [shlex.quote(executable)]
+    if frontend_config:
+        parts.extend(("--config", shlex.quote(frontend_config)))
+    if save_dir is not None:
+        parts.extend(("--save-dir", shlex.quote(save_dir)))
+    parts.extend(("--frames", str(frames), shlex.quote(rom)))
+    return " ".join(parts)
+
+
+def completed_record(output, frames):
+    return re.search(
+        rf"result=completed frames={frames} requested={frames}(?:\r?\n|$)", output
+    )
 
 
 def ssh_command(config, remote, *, input_data=None, timeout=10):
@@ -210,6 +228,31 @@ def run_remote(config, command, stage, timeout=10, payload=None):
     result = ssh_command(config, command, input_data=payload, timeout=timeout)
     classify_ssh(result, stage)
     return result.stdout.decode("utf-8", "replace")
+
+
+def parse_console_environment(output):
+    allowed = {"DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR"}
+    values = {}
+    for line in output.splitlines():
+        key, separator, value = line.partition("=")
+        if separator and key in allowed and re.fullmatch(r"[A-Za-z0-9_./:-]+", value):
+            values[key] = value
+    if not values.get("WAYLAND_DISPLAY") or not values.get("XDG_RUNTIME_DIR"):
+        raise Failure(4, "compatibility", "active console session has no usable Wayland display variables")
+    return values
+
+
+def remote_console_environment(config):
+    script = r'''set -eu
+pid=$(ps -eo pid=,args= | awk '$2 == "emulationstation" {print $1; exit}')
+[ -n "$pid" ]
+tr '\000' '\n' < "/proc/$pid/environ" |
+    while IFS= read -r item; do
+        case "$item" in DISPLAY=*|WAYLAND_DISPLAY=*|XDG_RUNTIME_DIR=*) printf '%s\n' "$item";; esac
+    done
+'''
+    output = run_remote(config, "sh -c " + shlex.quote(script), "preflight", timeout=15)
+    return parse_console_environment(output)
 
 
 def release_lock_command(lock, token):
@@ -334,11 +377,14 @@ def main():
     target_info = remote_preflight(config, artifact, rom, save_dir)
     EVIDENCE["device"] = {"runtime": target_info.strip()}
     emit("compatibility", "passed", "target architecture, runtime and user assets are compatible")
+    display_environment = remote_console_environment(config) if args.console_session else {}
+    if display_environment:
+        emit("display_environment", "passed", "active console Wayland environment validated")
     dest = config["install_dir"]
-    final = dest.rstrip("/") + "/seedlessds-headless"
+    final = dest.rstrip("/") + "/seedlessds"
     token = uuid.uuid4().hex
     lock = dest.rstrip("/") + "/.seedlessds-debug.lock"
-    temp = dest.rstrip("/") + "/.seedlessds-headless." + token + ".tmp"
+    temp = dest.rstrip("/") + "/.seedlessds." + token + ".tmp"
     lockcmd = ("set -eu; mkdir -p " + shlex.quote(dest) + "; [ -d " + shlex.quote(dest) + " ]; [ ! -L " + shlex.quote(dest) +
                " ]; [ ! -L " + shlex.quote(final) + " ]; mkdir " + shlex.quote(lock) +
                "; if printf '%s\\n' " + shlex.quote(token) + " > " + shlex.quote(lock + "/session") +
@@ -359,12 +405,17 @@ def main():
     emit("deployment", "passed", f"verified and promoted sha256={artifact['sha256']}")
     try:
         marker_token = uuid.uuid4().hex
-        frontend_options = (" --config " + shlex.quote(args.frontend_config)) if args.frontend_config else ""
-        if save_dir is not None:
-            frontend_options += " --save-dir " + shlex.quote(save_dir)
+        frontend_command = frontend_launch_command(
+            final, args.frontend_config, save_dir, args.frames, rom
+        )
+        if display_environment:
+            env_args = " ".join(
+                key + "=" + shlex.quote(value)
+                for key, value in sorted(display_environment.items())
+            )
+            frontend_command = "env " + env_args + " " + frontend_command
         command = ("set -eu; if " + shlex.quote(final) + " --help >/dev/null 2>&1; then "
-                   "if timeout --signal=TERM --kill-after=5s " + str(args.timeout) + " " + shlex.quote(final) +
-                   frontend_options + " --frames " + str(args.frames) + " " + shlex.quote(rom) +
+                   "if timeout --signal=TERM --kill-after=5s " + str(args.timeout) + " " + frontend_command +
                    "; then status=0; else status=$?; fi; else status=125; fi; printf '\\n__SEEDLESS_WRAPPER_" + marker_token + "__:%s\\n' \"$status\"; exit 0")
         result = ssh_command(config, command, timeout=args.timeout + 15)
     except Failure:
@@ -378,7 +429,7 @@ def main():
         pass
     marker = re.search(r"__SEEDLESS_WRAPPER_" + marker_token + r"__:(\d+)", output)
     output = re.sub(r"^.*__SEEDLESS_WRAPPER_" + marker_token + r"__:\d+.*(?:\n|$)", "", output, flags=re.M)
-    record = re.search(rf"result=completed frames={args.frames} requested={args.frames}(?:\r?\n|$)", output)
+    record = completed_record(output, args.frames)
     if result.returncode == 255 or not marker:
         EVIDENCE["transport_exit"] = result.returncode
         tail = sanitized_diagnostic_tail(output, redactor)

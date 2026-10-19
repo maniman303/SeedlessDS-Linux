@@ -46,7 +46,7 @@ endforeach()
 set_property(TARGET recon_fn PROPERTY SOURCES "${_core_sources}")
 target_sources(recon_fn PRIVATE
     "${CMAKE_SOURCE_DIR}/src/platform/linux/headless_audio.c"
-    "${CMAKE_SOURCE_DIR}/src/platform/linux/headless_video.c"
+    "${CMAKE_SOURCE_DIR}/src/platform/linux/software_video.c"
     "${CMAKE_SOURCE_DIR}/src/platform/linux/log.c"
     "${CMAKE_SOURCE_DIR}/src/platform/linux/memory.c")
 

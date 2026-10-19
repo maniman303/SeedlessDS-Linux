@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-fail() { printf 'validate-headless: ERROR: %s\n' "$*" >&2; exit 1; }
-[[ $# == 3 ]] || fail 'usage: bash scripts/validate-headless.sh BINARY ROM CONFIG'
+fail() { printf 'validate-video: ERROR: %s\n' "$*" >&2; exit 1; }
+[[ $# == 3 ]] || fail 'usage: bash scripts/validate-video.sh BINARY ROM CONFIG'
 binary="$(realpath -- "$1")"
 rom="$(realpath -- "$2")"
 config="$(realpath -- "$3")"
@@ -75,4 +75,4 @@ interrupt_run() {
 }
 interrupt_run SIGINT 130
 interrupt_run SIGTERM 143
-printf 'Headless acceptance checks passed. Log: %s\n' "$log"
+printf 'Video frontend acceptance checks passed. Log: %s\n' "$log"

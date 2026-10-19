@@ -20,6 +20,16 @@ fail() {
     exit 1
 }
 
+print_cross_sdl2_commands() {
+    if ! dpkg --print-foreign-architectures 2>/dev/null | grep -qx arm64; then
+        printf 'If arm64 is not enabled in apt, run these manually first:\n'
+        printf '  sudo dpkg --add-architecture arm64\n'
+        printf '  sudo apt-get update\n'
+    fi
+    printf 'Then install the target SDL2 development package manually:\n'
+    printf '  sudo apt-get install libsdl2-dev:arm64\n'
+}
+
 mode=''
 action='check'
 while (($#)); do
@@ -80,7 +90,13 @@ if [[ "$action" == dry-run ]]; then
     if [[ "$mode" == native ]]; then
         printf 'Native SDL2 development package: libsdl2-dev (SDL2 >= 2.0.12).\n'
     else
-        printf 'Provision SDL2 >= 2.0.12 and its graphics/backend dependencies in the AArch64 sysroot; do not use host SDL packages.\n'
+        if [[ -n "${SEEDLESS_TARGET_SYSROOT:-}" ]]; then
+            printf 'Provide SDL2 >= 2.0.12 development files and backend dependencies in SEEDLESS_TARGET_SYSROOT.\n'
+        else
+            printf 'Target SDL2 package: libsdl2-dev:arm64 (AArch64 multiarch; never use amd64 SDL libraries).\n'
+            print_cross_sdl2_commands
+            printf 'Alternatively, provide SDL2 >= 2.0.12 development files in SEEDLESS_TARGET_SYSROOT.\n'
+        fi
     fi
     exit 0
 fi
@@ -93,17 +109,29 @@ command -v "$cc" >/dev/null 2>&1 || missing+=("$cc")
 ((${#missing[@]} == 0)) || fail "required tools are missing: ${missing[*]}; run the installer or check Ubuntu repositories"
 
 if [[ "$mode" == cross ]]; then
-    target_sysroot="${SEEDLESS_TARGET_SYSROOT:-/usr/aarch64-linux-gnu}"
-    [[ -d "$target_sysroot" ]] || fail "AArch64 sysroot is unavailable: $target_sysroot"
-    export PKG_CONFIG_SYSROOT_DIR="$target_sysroot"
-    export PKG_CONFIG_LIBDIR="$target_sysroot/usr/lib/aarch64-linux-gnu/pkgconfig:$target_sysroot/usr/lib/pkgconfig:$target_sysroot/usr/share/pkgconfig:$target_sysroot/lib/aarch64-linux-gnu/pkgconfig"
+    if [[ -n "${SEEDLESS_TARGET_SYSROOT:-}" ]]; then
+        target_sysroot="$SEEDLESS_TARGET_SYSROOT"
+        [[ -d "$target_sysroot" ]] || fail "AArch64 sysroot is unavailable: $target_sysroot"
+        export PKG_CONFIG_SYSROOT_DIR="$target_sysroot"
+        export PKG_CONFIG_LIBDIR="$target_sysroot/usr/lib/aarch64-linux-gnu/pkgconfig:$target_sysroot/usr/lib/pkgconfig:$target_sysroot/usr/share/pkgconfig:$target_sysroot/lib/aarch64-linux-gnu/pkgconfig"
+    else
+        # Ubuntu/Debian multiarch development packages live outside the cross
+        # compiler's libc sysroot. Keep pkg-config confined to target SDL metadata.
+        unset PKG_CONFIG_SYSROOT_DIR
+        export PKG_CONFIG_LIBDIR='/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig'
+    fi
+    export PKG_CONFIG_PATH=''
 fi
 
 if ! pkg-config --atleast-version=2.0.12 sdl2; then
     if [[ "$mode" == native ]]; then
         fail 'SDL2 >= 2.0.12 development files are required; manually install libsdl2-dev, confirm success, then rerun --check'
     fi
-    fail 'target SDL2 >= 2.0.12 is not visible through target pkg-config; configure the AArch64 sysroot/pkg-config environment, then rerun --check'
+    if [[ -n "${SEEDLESS_TARGET_SYSROOT:-}" ]]; then
+        fail 'target SDL2 >= 2.0.12 is not visible in SEEDLESS_TARGET_SYSROOT; add its target pkg-config metadata and rerun --check'
+    fi
+    print_cross_sdl2_commands >&2
+    fail 'target SDL2 >= 2.0.12 is not visible through AArch64 pkg-config; run the manual package commands above or configure SEEDLESS_TARGET_SYSROOT, then rerun --check'
 fi
 
 cmake_version="$(cmake --version | awk 'NR == 1 { print $3 }')"

@@ -94,7 +94,7 @@ scripts/
 ├── setup-ubuntu.sh                  # manual prerequisite/check guidance
 ├── audit-runtime.py                # declared SDL/backend runtime model
 ├── debug-device.py                 # graphical preflight and --frontend-config
-└── validate-headless.sh             # adapt legacy validation to visible/configured runner
+└── validate-video.sh             # adapt legacy validation to visible/configured runner
 tests/                              # existing test root; names below are planned
 ├── abi/core_layout.c
 ├── video_layout.c
@@ -104,7 +104,7 @@ tests/                              # existing test root; names below are planne
 └── test_video_tooling.py
 ```
 
-**Structure Decision**: Extend the existing C runner rather than create a second application. Source names under `src/video/` are planned new modules; `config.[ch]` names follow the prerequisite implementation if it chooses another location. Keep private core includes in adapter/core target compilation. Keep `seedlessds-headless` as the build/install filename for compatibility, but update help, platform identity, and documentation to describe fullscreen operation. Do not keep a user-facing headless switch. The test-only probe is a separate validation executable, not another product launch mode.
+**Structure Decision**: Extend the existing C runner rather than create a second application. Source names under `src/video/` are planned new modules; `config.[ch]` names follow the prerequisite implementation if it chooses another location. Keep private core includes in adapter/core target compilation. Name the build/install executable `seedlessds` and update help, platform identity, and documentation to describe fullscreen operation. Do not keep a user-facing headless switch. The test-only probe is a separate validation executable, not another product launch mode.
 
 ## Phase 0 — Research Results
 
@@ -141,7 +141,7 @@ On selected-display removal, fullscreen loss that cannot be immediately re-estab
 
 ### Build and runtime compatibility
 
-Add `cmake/SDLVideo.cmake` with target-only installed-package discovery and minimum-version validation; link the application to shared `SDL2::SDL2`, not SDL2main. Native builds use native target packages. Cross builds use a complete AArch64 SDL/graphics sysroot and CMake package root isolation; use `CMAKE_PREFIX_PATH` inside that root if required, never host x86 SDL.
+Add `cmake/SDLVideo.cmake` with target-only installed-package discovery and minimum-version validation; link the application to shared `SDL2::SDL2`, not SDL2main. Native builds use native target packages. Cross builds may use Ubuntu/Debian's AArch64 multiarch development packages or a complete AArch64 SDL/graphics sysroot. Isolate pkg-config to the selected target package paths; never discover or link host x86 SDL.
 
 Before any agent configure, make `prepare-core.sh` fail if the pinned local core/submodules/cache are missing instead of attempting its conditional clone. Preserve patch/source verification. Do not run repository-modifying or dependency-fetching workflows without inspecting transitive actions. Existing permitted archive fetching is not an authorization for remote Git/GitHub access.
 

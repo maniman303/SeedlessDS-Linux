@@ -1,14 +1,14 @@
 # Quickstart Validation: Fullscreen Video Output
 
-This is a post-implementation acceptance guide. The code currently remains headless and feature 003 configuration is still a prerequisite; the planned tests, probe, `--config`, and video preferences below are not claimed to exist yet. Run these steps after their implementation. Commands assume an existing Linux terminal at the repository root.
+This guide validates the fullscreen SDL2 frontend, its shared feature 003 JSON configuration, and its `video` preferences. Commands assume an existing Linux terminal at the repository root.
 
 ## Prerequisites and workflow gate
 
-- Implement feature 003's JSON foundation and this feature. Have a legal, readable test ROM, separately supplied valid BIOS images, an otherwise valid full frontend JSON configuration, and writable save destinations. Neither ROM nor BIOS content is supplied by this project.
+- Have the feature 003 JSON configuration foundation and this feature built. Provide a legal, readable test ROM, valid BIOS images, an otherwise valid frontend JSON configuration, and writable save destinations. Neither ROM nor BIOS content is supplied by this project.
 - Use native ARM64 Ubuntu or the established amd64/WSL2 cross toolchain. Have CMake ≥3.28, Ninja, Python 3.12+, and target SDL2 ≥2.0.12 development/runtime packages. Prefer the maintained distribution version. SDL headers/libraries for amd64 do not satisfy ARM64 cross linking.
-- For cross builds, prepare a complete ARM64 sysroot containing SDL2 headers, library, CMake package metadata, and target graphics dependencies. Package/sysroot provisioning is a user/environment prerequisite, not an automatic repository download.
-- Inspect `scripts/prepare-core.sh` before configure: its current conditional `git clone` path must have been replaced with local fail-fast behavior, and all pinned dependencies must be locally available. Do not run cold initialization/submodule/remote Git commands from an agent workflow.
-- If native SDL prerequisites are missing and installation requires elevation, the user may manually run `sudo apt-get install libsdl2-dev`. Agents must stop before that operation and resume dependent work only after the user confirms success. Cross sysroot package installation is specific to the selected image and must likewise be a manual, explicit step if privileged.
+- For amd64 cross builds, use Ubuntu/Debian's `libsdl2-dev:arm64` multiarch package or supply an ARM64 sysroot containing SDL2 headers, shared library, pkg-config metadata, and target graphics dependencies. CMake isolates pkg-config to the AArch64 package path and never consumes amd64 SDL2. Package/sysroot provisioning is a user/environment prerequisite, not an automatic repository download.
+- `scripts/prepare-core.sh` requires the pinned core and dependency sources to be available locally and fails clearly when a required local input is missing. Configure does not initialize submodules or contact Git remotes.
+- If native SDL prerequisites are missing and installation requires elevation, the user may manually run `sudo apt-get install libsdl2-dev`. For cross builds, installing `libsdl2-dev:arm64` may require enabling Ubuntu's arm64 multiarch package architecture first; package and apt-source changes remain explicit user operations. Agents must stop before privileged operations and resume dependent work only after the user confirms success.
 - For hardware runs use an existing authorized graphical session or functioning KMSDRM environment on real ARM64 Linux hardware. Do not elevate the emulator, change DRM permissions, or assume SSH alone provides graphical access.
 - Use existing ignored device connection configuration where SSH is needed. Never display connection credentials. These steps do not create commits or contact Git/GitHub remotes.
 
@@ -22,8 +22,8 @@ Native ARM64:
 cmake --preset linux-arm64-native
 cmake --build --preset linux-arm64-native
 ctest --preset linux-arm64-native
-file build/linux-arm64-native/bin/seedlessds-headless
-readelf -d build/linux-arm64-native/bin/seedlessds-headless
+file build/linux-arm64-native/bin/seedlessds
+readelf -d build/linux-arm64-native/bin/seedlessds
 ```
 
 Cross build from amd64/WSL2, replacing the sysroot path with your prepared target root:
@@ -32,8 +32,8 @@ Cross build from amd64/WSL2, replacing the sysroot path with your prepared targe
 export SEEDLESS_TARGET_SYSROOT=/absolute/path/to/arm64-sysroot
 cmake --preset linux-arm64-cross
 cmake --build --preset linux-arm64-cross
-file build/linux-arm64-cross/bin/seedlessds-headless
-aarch64-linux-gnu-readelf -d build/linux-arm64-cross/bin/seedlessds-headless
+file build/linux-arm64-cross/bin/seedlessds
+aarch64-linux-gnu-readelf -d build/linux-arm64-cross/bin/seedlessds
 python3 -m unittest discover -s tests -p 'test_video_tooling.py'
 ```
 
@@ -78,11 +78,11 @@ Launch from an ARM64 build tree:
 
 ```sh
 sha256sum "$SEEDLESS_VIDEO_CONFIG"
-./build/linux-arm64-native/bin/seedlessds-headless --config "$SEEDLESS_VIDEO_CONFIG" --frames 120 "$SEEDLESS_VIDEO_ROM"
+./build/linux-arm64-native/bin/seedlessds --config "$SEEDLESS_VIDEO_CONFIG" --frames 120 "$SEEDLESS_VIDEO_ROM"
 sha256sum "$SEEDLESS_VIDEO_CONFIG"
 ```
 
-Expected: fullscreen changing top/bottom content, unchanged config hash, exit 0 and `result=completed frames=120 requested=120`. Replace only the binary path for a deployed cross build. The legacy binary filename does not imply headless operation.
+Expected: fullscreen changing top/bottom content, unchanged config hash, exit 0 and `result=completed frames=120 requested=120`. Replace only the binary path for a deployed cross build. The `seedlessds` executable always opens fullscreen video.
 
 ## Mode, layout, swap, and sharpness matrix
 
@@ -97,7 +97,7 @@ config = json.loads(path.read_text())
 config['video'] = {'display_mode': sys.argv[2], 'single_screen_layout': sys.argv[3], 'swap_screens': sys.argv[4] == 'true'}
 path.write_text(json.dumps(config, indent=2) + '\n')
 PY
-./build/linux-arm64-native/bin/seedlessds-headless --config "$SEEDLESS_VIDEO_CONFIG" --frames 120 "$SEEDLESS_VIDEO_ROM"
+./build/linux-arm64-native/bin/seedlessds --config "$SEEDLESS_VIDEO_CONFIG" --frames 120 "$SEEDLESS_VIDEO_ROM"
 ```
 
 Repeat on genuinely one-output and two-output setups:

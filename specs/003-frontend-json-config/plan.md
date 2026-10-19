@@ -88,7 +88,7 @@ tests/
 1. Implement strict JSON/configuration and launch modules with host contract tests, including Unicode, duplicate keys, creation races, and absent versus empty overrides.
 2. Add the explicit Linux core bridge patch and ABI checks for settings application, exact image/save paths, fixed policies, and persistent save error reporting.
 3. Integrate the new modules into runner startup/cleanup and CMake without expanding runner's parsing responsibilities.
-4. Update README, `scripts/validate-headless.sh`, `scripts/debug-device.py`, and its tests for `--config` and `--save-dir`; remove `--data-dir` from frontend invocations while retaining `--frames`. Keep device inventory/transport options independent from frontend settings.
+4. Update README, `scripts/validate-video.sh`, `scripts/debug-device.py`, and its tests for `--config` and `--save-dir`; remove `--data-dir` from frontend invocations while retaining `--frames`. Keep device inventory/transport options independent from frontend settings.
 5. Validate native/cross builds, filesystem/CLI integration, and real-device BIOS/firmware/profile/visual/JIT/RTC/save scenarios. Record observed device and runtime details without credentials.
 
 No constitutional exceptions or complexity waivers are needed.

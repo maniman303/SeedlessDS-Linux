@@ -6,6 +6,8 @@
 #include <stdatomic.h>
 #include <stdint.h>
 #include <seedlessds/nds.h>
+#include "video/sdl_video.h"
+#include "platform/linux/core_video_bridge.h"
 
 typedef enum seedless_run_state {
     SEEDLESS_RUN_VALIDATED,
@@ -25,6 +27,9 @@ typedef enum seedless_run_outcome {
 
 typedef struct seedless_run_session {
     nds_t *core;
+    seedless_sdl_video_t video;
+    seedless_video_frame_mailbox_t video_mailbox;
+    seedless_core_video_bridge_t video_bridge;
     pthread_t worker;
     const char *rom_path;
     uint64_t requested_frames;
@@ -32,6 +37,7 @@ typedef struct seedless_run_session {
     int frame_limit_set;
     int worker_started;
     int control_started;
+    int video_mailbox_started;
     int load_succeeded;
     sig_atomic_t signal_number;
     seedless_run_state_t state;

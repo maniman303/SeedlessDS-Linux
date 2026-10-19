@@ -23,7 +23,7 @@ cmake --preset linux-arm64-cross
 cmake --build --preset linux-arm64-cross
 ```
 
-Both presets emit `build/<preset>/bin/seedlessds-headless`. Host-only checks may run on amd64; cross target tests must be transferred and run on ARM64. Never make cross CTest attempt to execute target binaries implicitly.
+Both presets emit `build/<preset>/bin/seedlessds`. Host-only checks may run on amd64; cross target tests must be transferred and run on ARM64. Never make cross CTest attempt to execute target binaries implicitly.
 
 Use a real CMake toolchain with Linux/aarch64, explicit compilers, and target-only library/include/package searches; host programs remain host-selected. Provide documented `SEEDLESS_TARGET_SYSROOT` override for device ABI builds; reject missing or incompatible sysroots. Pin/download/checksum dependencies and initialize nested Git submodules explicitly; offline reuse is allowed only for verified cached inputs. Preserve upstream license notices.
 

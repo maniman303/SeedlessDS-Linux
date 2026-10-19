@@ -15,9 +15,9 @@ scripts/setup-ubuntu.sh --cross
 scripts/setup-ubuntu.sh --cross --check
 cmake --preset linux-arm64-cross
 cmake --build --preset linux-arm64-cross
-file build/linux-arm64-cross/bin/seedlessds-headless
-aarch64-linux-gnu-readelf -l build/linux-arm64-cross/bin/seedlessds-headless
-aarch64-linux-gnu-readelf --version-info build/linux-arm64-cross/bin/seedlessds-headless
+file build/linux-arm64-cross/bin/seedlessds
+aarch64-linux-gnu-readelf -l build/linux-arm64-cross/bin/seedlessds
+aarch64-linux-gnu-readelf --version-info build/linux-arm64-cross/bin/seedlessds
 ```
 
 Installer needs root/sudo for apt; verification/build do not. Updated setup must install/check sshpass and SSH tooling. CMake runs `prepare-core.sh linux-arm64-cross` automatically, fetches pinned dependencies and audits the executable; expect `build/linux-arm64-cross/runtime-inventory.json`. If targeting another sysroot, export `SEEDLESS_TARGET_SYSROOT=/absolute/path/to/device-sysroot` before a clean configure and confirm the resulting ABI against hardware.
@@ -45,7 +45,7 @@ Replace runtime-path placeholders with the user's device-local paths; use native
 
 ```sh
 python3 scripts/debug-device.py run \
-  --binary build/linux-arm64-cross/bin/seedlessds-headless \
+  --binary build/linux-arm64-cross/bin/seedlessds \
   --inventory build/linux-arm64-cross/runtime-inventory.json \
   --rom /absolute/device/path/test.nds \
   --data-dir /absolute/device/path/run-data \
@@ -54,7 +54,7 @@ python3 scripts/debug-device.py run \
 
 Expected: validated settings, root connection, Linux/AArch64 and ABI checks, verified atomic deployment, successful help launch and bounded emulation; CLI exit 0, runner exit 0 and `result=completed frames=120 requested=120`. Repeat without editing tracked files to demonstrate configuration reuse. Inspect sanitized evidence under `build/validation/device/` and verify deployed SHA-256 equals the local binary. Help alone does not prove successful emulation.
 
-Perform controlled failure checks through fake transport for authentication/transfer failures and on hardware where practical without changing device policies. Missing assets or incompatible libraries must identify the blocked stage and prevent dependent execution. Do not alter existing assets merely to induce failure. Existing `scripts/validate-headless.sh BINARY ROM DATA_DIR` can provide deeper on-device regression coverage if its Bash/ripgrep/timeout prerequisites are available; it is optional for this feature's acceptance.
+Perform controlled failure checks through fake transport for authentication/transfer failures and on hardware where practical without changing device policies. Missing assets or incompatible libraries must identify the blocked stage and prevent dependent execution. Do not alter existing assets merely to induce failure. Existing `scripts/validate-video.sh BINARY ROM DATA_DIR` can provide deeper on-device regression coverage if its Bash/ripgrep/timeout prerequisites are available; it is optional for this feature's acceptance.
 
 ## Documentation acceptance
 

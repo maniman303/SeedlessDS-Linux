@@ -22,9 +22,9 @@ On ARM64 Ubuntu substitute `--native`. Repeat normal setup and check once to val
 git submodule update --init --recursive
 cmake --preset linux-arm64-cross
 cmake --build --preset linux-arm64-cross
-file build/linux-arm64-cross/bin/seedlessds-headless
-aarch64-linux-gnu-readelf -h build/linux-arm64-cross/bin/seedlessds-headless
-aarch64-linux-gnu-readelf -d build/linux-arm64-cross/bin/seedlessds-headless
+file build/linux-arm64-cross/bin/seedlessds
+aarch64-linux-gnu-readelf -h build/linux-arm64-cross/bin/seedlessds
+aarch64-linux-gnu-readelf -d build/linux-arm64-cross/bin/seedlessds
 ```
 
 Expect an AArch64 Linux executable with no Android/OpenSL/GLES dependency. For native builds use `linux-arm64-native` for configure/build and run `ctest --preset linux-arm64-native`. Supply the documented sysroot override when targeting devices whose libc differs from the Ubuntu reference runtime. Cross binaries must be validated on ARM64, not launched on amd64.
@@ -37,7 +37,7 @@ Transfer the executable through existing user-managed SSH configuration. Applica
 
 ```bash
 mkdir -p ./run-data
-env -u DISPLAY -u WAYLAND_DISPLAY ./seedlessds-headless --data-dir ./run-data --frames 120 /path/to/test.nds
+env -u DISPLAY -u WAYLAND_DISPLAY ./seedlessds --data-dir ./run-data --frames 120 /path/to/test.nds
 ```
 
 Expect `result=completed frames=120 requested=120`, exit 0, no windows, sound or microphone access. Repeat three times for each artifact from native and cross builds. Also run `--frames 1` to catch startup/target ordering errors. Missing display and sound services must not affect execution. The runner arms `nds_control_run_to(N)` before the worker starts and reports the control API frame count. Retain adapter device-access audit evidence.

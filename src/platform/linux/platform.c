@@ -5,6 +5,7 @@
 #include <pthread.h>
 #include <time.h>
 #include "compat.h"
+#include "frontend/video_out_gl.h"
 
 extern void platform_set(const nds_platform_t *platform);
 
@@ -58,13 +59,22 @@ static int linux_mutex_destroy(void *key)
     pthread_mutex_lock(&slot_guard);
     for (unsigned i = 0; i < SYNC_SLOTS; ++i) if (mutex_slots[i].key == key) {
         result = pthread_mutex_destroy(&mutex_slots[i].value);
+        if (key == video_out_gl_state.mutex)
+            fprintf(stderr, "seedlessds[core-video-sync]: mutex_destroy key=%p slot=%u result=%d\n", key, i, result);
         if (!result) mutex_slots[i].key = NULL;
         break;
     }
     pthread_mutex_unlock(&slot_guard);
     return result;
 }
-static int linux_mutex_lock(void *key) { pthread_mutex_t *m = mutex_for(key, 0); return m ? pthread_mutex_lock(m) : EINVAL; }
+static int linux_mutex_lock(void *key)
+{
+    pthread_mutex_t *m = mutex_for(key, 0);
+    int result = m ? pthread_mutex_lock(m) : EINVAL;
+    if (key == video_out_gl_state.mutex && result != 0)
+        fprintf(stderr, "seedlessds[core-video-sync]: platform_lock_failed key=%p registered=%s result=%d\n", key, m ? "yes" : "no", result);
+    return result;
+}
 static int linux_mutex_unlock(void *key) { pthread_mutex_t *m = mutex_for(key, 0); return m ? pthread_mutex_unlock(m) : EINVAL; }
 static int linux_cond_init(void *key) { return cond_for(key, 1) ? 0 : ENOMEM; }
 static int linux_cond_destroy(void *key)
@@ -120,7 +130,7 @@ const nds_platform_t *seedless_linux_platform(void)
 {
     if (!linux_platform_ready) {
         linux_platform = *nds_platform_default();
-        linux_platform.name = "linux-headless";
+        linux_platform.name = "linux-sdl2-fullscreen";
         linux_platform.log = linux_log;
         linux_platform.time.now_us = linux_now_us;
         linux_platform.time.now_seconds = linux_now_seconds;

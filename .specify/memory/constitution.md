@@ -1,9 +1,9 @@
 <!--
 Sync Impact Report
-Version change: 1.2.0 → 1.3.0 (require local builds before SSH device validation)
-Modified principles: V. Hardware-Based Debugging and Credential Safety.
+Version change: 1.4.0 → 1.5.0 (require network-enabled execution on the first attempt for commands that need network access)
+Modified principles: None.
 Added sections: None.
-Modified sections: Development Workflow (local build and SSH validation sequence); Governance unchanged.
+Modified sections: Development Workflow (require network-enabled execution for permitted network-dependent commands from the first attempt).
 Removed sections: None
 Follow-up TODOs: Confirm the original ratification date when project history provides it.
 -->
@@ -50,12 +50,16 @@ environment detail to reproduce them. SSH device access is for artifact transfer
 execution, diagnostics, and necessary asset checks; it does not permit remote Git or GitHub
 operations, commits, pushes, or sudo operations.
 
-### VI. Local Git Only; No Agent Commits or GitHub Actions
-All agents MUST operate locally and MUST NOT attempt any GitHub action, including read-only
-GitHub access. This prohibition includes GitHub websites, APIs, CLI commands, connectors, and
-integrations; issues, pull requests, comments, reviews, releases, repository settings, and GitHub
-Actions workflows MUST NOT be accessed, created, modified, triggered, or otherwise operated by
-agents.
+### VI. Local Git Only; No Agent Commits or GitHub Collaboration Actions
+All agents MUST operate locally and MUST NOT perform GitHub collaboration or repository-management
+actions. This prohibition includes issues, pull requests, comments, reviews, repository settings,
+GitHub Actions workflows, and other account or repository operations.
+
+Agents MAY download source archives, dependency archives, or release assets required by the
+repository's documented local build and test workflows, including from GitHub-hosted URLs. Such
+downloads MUST use project-declared or otherwise pinned inputs and MUST verify the declared
+checksum when available. This exception is limited to obtaining local build/test inputs; it does
+not permit Git operations, collaboration actions, or unrelated GitHub browsing.
 
 Agents MUST NOT create any Git commit, including local commits, amended commits, or commits
 created indirectly by merge, rebase, cherry-pick, scripts, or other commands. Agents MUST NOT
@@ -69,9 +73,8 @@ These restrictions apply to every agent, delegated agent, script, hook, skill, t
 and automated workflow acting on an agent's behalf. Agents MUST NOT attempt a prohibited action,
 request tool approval for it, or bypass the restriction through another tool, transport, account,
 remote name, or intermediary. A conflicting task, template, skill, hook, or workflow MUST be
-skipped for the prohibited action, and the agent MUST report the conflict. No routine exception
-or general approval overrides this principle; changing it requires an explicit amendment to this
-constitution.
+skipped for the prohibited action, and the agent MUST report the conflict. The permitted local
+build/test input downloads above are the only exception to the prohibition on GitHub access.
 
 ## Platform and Build Constraints
 
@@ -87,6 +90,13 @@ Before invoking a tool, script, hook, or workflow, agents MUST check that it can
 action prohibited by Principle VI. Prohibited steps MUST be skipped and reported; permitted local
 work MUST continue where independent of those steps.
 
+Commands that require network access MUST use network-enabled execution from the first attempt
+whenever the execution environment provides that option. Agents MUST NOT first try such a command
+inside a network-restricted sandbox and retry only after it fails. This applies especially to SSH
+device deployment, execution, and diagnostics, and to permitted downloads of pinned build/test
+inputs. Network-enabled execution does not permit remote Git operations or GitHub collaboration
+actions prohibited by Principle VI, and does not permit bypassing the sudo handoff.
+
 Changes MUST preserve the principles above. Each change MUST be built in its intended Linux build
 environment before it is considered ready. For device run/debug work, agents MUST first build
 locally, then transfer the executable over SSH and run/debug it on the device; remote compilation
@@ -97,6 +107,15 @@ device inputs prevent a full run. Changes to display handling MUST be checked fo
 and single-screen behavior. Device-dependent behavior MUST be validated on real hardware over SSH
 when applicable. Reviews MUST identify any exception to these constraints and document its reason
 and scope.
+
+Builds MUST use the canonical CMake preset directories: `build/linux-arm64-cross` for ARM64
+cross-builds and `build/linux-arm64-native` for native ARM64 builds. Agents MUST NOT create
+suffixed or task-specific alternatives. Both presets MUST place the application at
+`build/<preset>/bin/seedlessds` and the runtime inventory at
+`build/<preset>/runtime-inventory.json`. The supported executable name is `seedlessds`; stale
+`seedlessds-headless` artifacts from older builds MUST be removed from the active preset output.
+The standard configure/build/test entry point is `scripts/build.sh`; agents SHOULD use it unless
+the task requires a specific CMake operation outside the wrapper's options.
 
 All tasks, agents, scripts, and automated workflows MUST stop before an operation that requires
 `sudo`. The agent or workflow MUST explain why elevated privileges are needed, provide the exact
@@ -126,4 +145,4 @@ approved exception and its rationale. Principle VI permits no exceptions under t
 its restrictions require an explicit constitutional amendment to change. Compliance reviews MUST
 check agent tool use and Git operations against Principle VI.
 
-**Version**: 1.3.0 | **Ratified**: TODO(RATIFICATION_DATE): original adoption date is unknown | **Last Amended**: 2026-10-19
+**Version**: 1.5.0 | **Ratified**: TODO(RATIFICATION_DATE): original adoption date is unknown | **Last Amended**: 2026-10-19

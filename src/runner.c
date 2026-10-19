@@ -270,13 +270,20 @@ int seedless_runner_main(int argc, char **argv)
 {
     uint64_t requested = 0;
     int have_frames = 0, result = 1;
+    int normal_close = 0;
     const char *failure_operation = "load";
     char *canonical_rom = NULL;
     seedless_launch_options_t options;
     seedless_config_t config = {0};
     seedless_runtime_config_t runtime = {0};
     seedless_config_error_t config_error = {0};
+    seedless_video_preferences_t video_preferences = {
+        .requested_mode = SEEDLESS_VIDEO_MODE_AUTO,
+        .single_layout = SEEDLESS_VIDEO_LAYOUT_VERTICAL,
+        .swap_screens = 0,
+    };
     char launch_error[256] = {0}, core_error[256] = {0};
+    char video_error[256] = {0};
     struct stat st;
     nds_control_status_t status;
     struct sigaction action;
@@ -318,6 +325,7 @@ int seedless_runner_main(int argc, char **argv)
         free(canonical_rom); seedless_config_free(&config); seedless_runtime_config_free(&runtime);
         return 1;
     }
+    video_preferences = config.video;
     free(canonical_rom); canonical_rom = NULL;
     if (!seedless_core_config_apply(&config, &runtime, core_error, sizeof core_error)) {
         fprintf(stderr, "seedlessds[error]: %s\n", core_error);
@@ -334,6 +342,26 @@ int seedless_runner_main(int argc, char **argv)
         seedless_core_config_reset(); seedless_config_free(&config); seedless_runtime_config_free(&runtime); return 1;
     }
 
+    if (!seedless_sdl_video_init(&run.video, &video_preferences,
+                                 video_error, sizeof video_error)) {
+        fprintf(stderr, "seedlessds[error]: operation=video: %s\n", video_error);
+        printf("result=failed frames=0 operation=video\n");
+        seedless_core_config_reset();
+        seedless_config_free(&config);
+        seedless_runtime_config_free(&runtime);
+        return 1;
+    }
+    if (!seedless_video_mailbox_init(&run.video_mailbox)) {
+        fprintf(stderr, "seedlessds[error]: operation=video: could not allocate frame mailbox\n");
+        printf("result=failed frames=0 operation=video\n");
+        seedless_sdl_video_destroy(&run.video);
+        seedless_core_config_reset();
+        seedless_config_free(&config);
+        seedless_runtime_config_free(&runtime);
+        return 1;
+    }
+    run.video_mailbox_started = 1;
+
     memset(&action, 0, sizeof action);
     action.sa_handler = on_signal;
     sigemptyset(&action.sa_mask);
@@ -346,10 +374,19 @@ int seedless_runner_main(int argc, char **argv)
     if (!run.core) {
         fprintf(stderr, "Core initialization failed\n");
         printf("result=failed frames=0 operation=initialize\n");
+        seedless_sdl_video_destroy(&run.video);
+        seedless_video_mailbox_destroy(&run.video_mailbox);
+        run.video_mailbox_started = 0;
         seedless_core_config_reset(); seedless_config_free(&config); seedless_runtime_config_free(&runtime); return 1;
     }
     fprintf(stderr, "seedlessds[info]: core initialization completed\n");
     run.state = SEEDLESS_RUN_INITIALIZED;
+    if (!seedless_core_video_bridge_attach(&run.video_bridge, run.core, &run.video_mailbox,
+                                           video_error, sizeof video_error)) {
+        fprintf(stderr, "seedlessds[error]: operation=video: %s\n", video_error);
+        failure_operation = "video";
+        goto cleanup;
+    }
     runner_phase = 2;
     nds_control_begin(-1, 1, 1);
     run.control_started = 1;
@@ -370,6 +407,51 @@ int seedless_runner_main(int argc, char **argv)
     fprintf(stderr, "seedlessds[info]: ROM load started; bounded_frames=%s\n",
             have_frames ? "enabled" : "disabled");
     for (;;) {
+        int should_quit = 0;
+        if (!seedless_sdl_video_poll(&run.video, &should_quit,
+                                     video_error, sizeof video_error)) {
+            fprintf(stderr, "seedlessds[error]: operation=video: %s\n", video_error);
+            failure_operation = "video";
+            result = 1;
+            run.outcome = SEEDLESS_OUTCOME_FAILED;
+            run.state = SEEDLESS_RUN_STOPPING;
+            nds_quit(run.core);
+            break;
+        }
+        if (should_quit) {
+            normal_close = 1;
+            result = 0;
+            run.outcome = SEEDLESS_OUTCOME_COMPLETED;
+            run.state = SEEDLESS_RUN_STOPPING;
+            nds_quit(run.core);
+            break;
+        }
+        if (seedless_video_mailbox_get_failure(&run.video_mailbox,
+                                               video_error, sizeof video_error)) {
+            fprintf(stderr, "seedlessds[error]: operation=video: %s\n", video_error);
+            failure_operation = "video";
+            result = 1;
+            run.outcome = SEEDLESS_OUTCOME_FAILED;
+            run.state = SEEDLESS_RUN_STOPPING;
+            nds_quit(run.core);
+            break;
+        }
+        uint64_t sequence = 0;
+        if (seedless_video_mailbox_consume_latest(&run.video_mailbox, &sequence)) {
+            const seedless_video_frame_pair_t *pair =
+                seedless_video_mailbox_consumer_pair(&run.video_mailbox);
+            (void)sequence;
+            if (!seedless_sdl_video_present(&run.video, pair,
+                                            video_error, sizeof video_error)) {
+                fprintf(stderr, "seedlessds[error]: operation=video: %s\n", video_error);
+                failure_operation = "video";
+                result = 1;
+                run.outcome = SEEDLESS_OUTCOME_FAILED;
+                run.state = SEEDLESS_RUN_STOPPING;
+                nds_quit(run.core);
+                break;
+            }
+        }
         nds_control_status(&status);
         if (status.error) {
             fprintf(stderr, "Core runtime error: %d\n", status.error);
@@ -387,8 +469,22 @@ int seedless_runner_main(int argc, char **argv)
             continue;
         }
         if (have_frames && status.paused && status.frames >= requested) {
-            result = 0; run.outcome = SEEDLESS_OUTCOME_COMPLETED;
-            run.state = SEEDLESS_RUN_STOPPING; nds_quit(run.core); break;
+            fprintf(stderr,
+                    "seedlessds[info]: bounded frame target reached frames=%" PRIu64 "; detaching presentation hook before core shutdown\n",
+                    status.frames);
+            if (!seedless_core_video_bridge_detach(&run.video_bridge,
+                                                   video_error, sizeof video_error)) {
+                fprintf(stderr, "seedlessds[error]: operation=video: %s\n", video_error);
+                failure_operation = "video-detach";
+                result = 1;
+                run.outcome = SEEDLESS_OUTCOME_FAILED;
+            } else {
+                result = 0;
+                run.outcome = SEEDLESS_OUTCOME_COMPLETED;
+            }
+            run.state = SEEDLESS_RUN_STOPPING;
+            nds_quit(run.core);
+            break;
         }
         if (atomic_load_explicit(&run.worker_done, memory_order_acquire)) break;
         usleep(10000);
@@ -406,9 +502,30 @@ int seedless_runner_main(int argc, char **argv)
     nds_control_status(&status);
     run.frames = status.frames;
     run.signal_number = stop_signal;
+    seedless_core_video_bridge_trace("worker-joined-before-control-end");
     if (run.control_started) nds_control_end();
+    seedless_core_video_bridge_trace("after-control-end");
+    seedless_core_video_bridge_detach_stopped(&run.video_bridge);
+    uint64_t final_sequence = 0;
+    if (run.video_mailbox_started &&
+        seedless_video_mailbox_consume_latest(&run.video_mailbox, &final_sequence)) {
+        const seedless_video_frame_pair_t *pair =
+            seedless_video_mailbox_consumer_pair(&run.video_mailbox);
+        if (!seedless_sdl_video_present(&run.video, pair,
+                                        video_error, sizeof video_error)) {
+            fprintf(stderr, "seedlessds[error]: operation=video: %s\n", video_error);
+            failure_operation = "video";
+            result = 1;
+            run.outcome = SEEDLESS_OUTCOME_FAILED;
+        }
+    }
     nds_destroy(run.core);
     run.core = NULL;
+    if (run.video_mailbox_started) {
+        seedless_video_mailbox_destroy(&run.video_mailbox);
+        run.video_mailbox_started = 0;
+    }
+    seedless_sdl_video_destroy(&run.video);
     run.state = run.outcome == SEEDLESS_OUTCOME_FAILED ? SEEDLESS_RUN_FAILED : SEEDLESS_RUN_STOPPED;
     int save_error = seedless_core_config_save_error();
     if (save_error) {
@@ -424,6 +541,9 @@ int seedless_runner_main(int argc, char **argv)
         run.outcome = SEEDLESS_OUTCOME_INTERRUPTED;
         printf("result=interrupted frames=%" PRIu64 " signal=%s\n", status.frames, stop_signal == SIGINT ? "SIGINT" : "SIGTERM");
     }
+    else if (normal_close) {
+        printf("result=closed frames=%" PRIu64 "\n", status.frames);
+    }
     else if (result == 0 && run.load_succeeded && run.outcome == SEEDLESS_OUTCOME_COMPLETED)
         printf("result=completed frames=%" PRIu64 " requested=%" PRIu64 "\n", status.frames, requested);
     else {
@@ -438,8 +558,14 @@ int seedless_runner_main(int argc, char **argv)
 cleanup:
     printf("result=failed frames=0 operation=%s\n", failure_operation);
     if (run.control_started) nds_control_end();
+    if (run.video_bridge.attached &&
+        !seedless_core_video_bridge_detach(&run.video_bridge,
+                                           video_error, sizeof video_error))
+        fprintf(stderr, "seedlessds[error]: operation=video: %s\n", video_error);
     nds_destroy(run.core);
     run.core = NULL;
+    if (run.video_mailbox_started) seedless_video_mailbox_destroy(&run.video_mailbox);
+    seedless_sdl_video_destroy(&run.video);
     run.state = SEEDLESS_RUN_FAILED;
     if (seedless_core_config_save_error()) failure_operation = "save";
     seedless_core_config_reset(); seedless_config_free(&config); seedless_runtime_config_free(&runtime);
