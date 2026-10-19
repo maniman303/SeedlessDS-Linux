@@ -58,7 +58,7 @@ case "$mode:$host_arch" in
     cross:*) fail "--cross requires amd64 Ubuntu (detected $host_arch)" ;;
 esac
 
-common_packages=(build-essential cmake ninja-build git pkg-config ca-certificates curl
+common_packages=(build-essential cmake ninja-build git pkg-config ca-certificates curl sshpass
     xz-utils bzip2 unzip python3 shellcheck file binutils openssh-client)
 if [[ "$mode" == native ]]; then
     packages=("${common_packages[@]}" gdb)
@@ -95,7 +95,7 @@ if [[ "$action" == install ]]; then
 fi
 
 missing=()
-for command_name in cmake ninja git pkg-config curl python3 shellcheck file "$readelf"; do
+for command_name in cmake ninja git pkg-config curl python3 shellcheck file ssh sshpass "$readelf"; do
     command -v "$command_name" >/dev/null 2>&1 || missing+=("$command_name")
 done
 command -v "$cc" >/dev/null 2>&1 || missing+=("$cc")
@@ -109,6 +109,12 @@ if version < (3, 28):
     print(f"setup-ubuntu: ERROR: CMake >=3.28 is required (found {sys.argv[1]})", file=sys.stderr)
     raise SystemExit(1)
 PY
+python3 - <<'PY_VERSION' || exit 1
+import sys
+if sys.version_info < (3, 12):
+    print(f"setup-ubuntu: ERROR: Python >=3.12 is required (found {sys.version.split()[0]})", file=sys.stderr)
+    raise SystemExit(1)
+PY_VERSION
 
 triple="$($cc -dumpmachine 2>/dev/null)" || fail "could not query target triple from $cc"
 [[ "$triple" == aarch64*-linux-gnu* ]] || fail "$cc targets '$triple', expected aarch64 Linux GNU"

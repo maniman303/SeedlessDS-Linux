@@ -1,6 +1,6 @@
 # Validation Quickstart
 
-This guide describes validation after implementation. The planned `debug-device.py` interface is defined in [contracts/device-debug.md](contracts/device-debug.md); it is not supplied by this planning change.
+This guide describes validation with the implemented `scripts/debug-device.py` CLI; the interface and security contract are defined in [contracts/device-debug.md](contracts/device-debug.md).
 
 ## Prerequisites
 
@@ -10,9 +10,9 @@ Use Ubuntu 24.04/26.04, ARM64 native or amd64 cross; Windows x86-64 uses WSL2 Ub
 
 On amd64 Linux or WSL2 Ubuntu:
 
-```bash
-bash scripts/setup-ubuntu.sh --cross
-bash scripts/setup-ubuntu.sh --cross --check
+```sh
+scripts/setup-ubuntu.sh --cross
+scripts/setup-ubuntu.sh --cross --check
 cmake --preset linux-arm64-cross
 cmake --build --preset linux-arm64-cross
 file build/linux-arm64-cross/bin/seedlessds-headless
@@ -28,7 +28,7 @@ On ARM64 Ubuntu substitute `--native` and `linux-arm64-native` for setup/preset/
 
 The implementer explicitly asks the user for console IP, root SSH password and absolute installation directory, then creates ignored `.device.local` from `.device.example.json` without printing credentials, with mode 0600. Keep the template placeholder-only. Confirm exclusion without reading its content:
 
-```bash
+```sh
 git check-ignore .device.local
 git check-ignore .device.example.json
 python3 scripts/debug-device.py check
@@ -43,7 +43,7 @@ Before automated access, manually run `ssh root@<CONSOLE_IP>` with the real addr
 
 Replace runtime-path placeholders with the user's device-local paths; use native artifact paths if applicable:
 
-```bash
+```sh
 python3 scripts/debug-device.py run \
   --binary build/linux-arm64-cross/bin/seedlessds-headless \
   --inventory build/linux-arm64-cross/runtime-inventory.json \
@@ -61,3 +61,7 @@ Perform controlled failure checks through fake transport for authentication/tran
 README Build must show working directories, supported hosts, setup and verification order, privileges, environment/sysroot settings, both presets, artifact paths, runtime constraints and which machines can execute each artifact. README Debug must show private config setup, host verification, prerequisites, runtime inputs, deployment/run commands, stage/runner interpretation and actual hardware findings.
 
 Record attempt date, sanitized device model/OS/kernel/architecture/libc, tested revision/artifact hash, actual commands with private values replaced, result and exit status, issues and workarounds. Missing hardware, credentials or ROMs remain explicitly blocked; record what prevented the attempt and leave FR-009/SC-002 outstanding. Review all changed tracked files and evidence for private values before sharing. Do not publish raw logs. A real successful bounded session is mandatory for completed hardware acceptance.
+
+## Implementation status (2026-10-19)
+
+Local configuration schema, owner-only mode, Git exclusion, placeholder rejection, special-character preservation, CLI help and artifact/inventory hash validation were checked. The cross setup check passed after the host prerequisites were installed. A fresh preset-based cross configure/build succeeded in `/tmp/seedlessds-device-cross` because the repository's prior preset cache references a different checkout; its sanitized inventory and build observations are recorded under ignored `build/validation/device/`. The output is AArch64, imports only the target loader and libc, and requires GLIBC 2.34. It was inspected with `file` and `readelf`, not run on amd64. After the user confirmed the trusted host fingerprint, the actual console passed connection, compatibility and deployment checks. The console reports Anbernic RG DS Plus, Linux, kernel 7.2.7, AArch64 and GNU libc 2.44. The 120-frame runner exited 139; a second 120-frame diagnostic and one-frame probe exited 135, all without valid completion records. Kernel logs report failed systemd-coredump pipe attempts, and no core dump was available. The sanitized per-session record and separate hardware diagnostic are under ignored `build/validation/device/`. User-provided ROM and data directories contained ROM files; one was selected without including its filename in evidence. Controlled fake-transport checks cover workflow exit mapping and transfer safety, but do not establish successful hardware acceptance. FR-009/SC-002 remains pending until the crash is diagnosed and an exact bounded completion succeeds. See [README Debug](../../README.md#debug) for the findings.

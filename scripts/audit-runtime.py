@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Audit the target ELF and record its OS runtime requirements."""
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -51,6 +52,8 @@ def main():
         'generated_utc': datetime.now(timezone.utc).isoformat(),
         'preset': args.preset,
         'artifact': str(binary),
+        'size_bytes': binary.stat().st_size,
+        'sha256': hashlib.sha256(binary.read_bytes()).hexdigest(),
         'elf_machine': machine.group(1).strip(),
         'interpreter': interpreter.group(1) if interpreter else None,
         'shared_dependencies': needed,
@@ -73,6 +76,7 @@ def main():
     args.output.write_text(json.dumps(inventory, indent=2) + '\n')
     print(f"Runtime inventory: {args.output}")
     print(f"ELF: {inventory['elf_machine']}; shared runtime: {', '.join(needed)}")
+    print(f"Artifact SHA-256: {inventory['sha256']} ({inventory['size_bytes']} bytes)")
     print(f"Maximum GLIBC symbol version: {inventory['maximum_glibc_symbol_version']}")
     return 0
 

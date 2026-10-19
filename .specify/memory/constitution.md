@@ -1,13 +1,10 @@
 <!--
 Sync Impact Report
-Version change: unresolved scaffold → 1.0.0 (initial project constitution)
+Version change: 1.0.0 → 1.1.0 (expanded development workflow requirements)
 Modified principles:
-- Template principle slot 1 → I. Linux and ARM64 First
-- Template principle slot 2 → II. Portable Frontend and Display Support
-- Template principle slot 3 → III. SeedlessDS-Core Integration Boundary
-- Template principle slot 4 → IV. Linux Build and Cross-Compilation
-- Template principle slot 5 → V. Hardware-Based Debugging and Credential Safety
-Added sections: Platform and Build Constraints; Development Workflow
+- None; existing core principles preserved.
+Modified sections: Development Workflow (sudo handoff and Linux terminal commands).
+Added sections: None
 Removed sections: None
 Follow-up TODOs: Confirm the original ratification date when project history provides it.
 -->
@@ -64,6 +61,21 @@ dual-screen and single-screen behavior. Device-dependent behavior MUST be valida
 hardware over SSH when applicable. Reviews MUST identify any exception to these constraints and
 document its reason and scope.
 
+All tasks, agents, scripts, and automated workflows MUST stop before an operation that requires
+`sudo`. The agent or workflow MUST explain why elevated privileges are needed, provide the exact
+command for the user to run manually, and ask the user to run it. Agents and automation MUST NOT
+execute the privileged operation themselves or bypass this handoff through another elevation
+mechanism. Work MUST resume only after the user explicitly confirms successful completion;
+elapsed time or approval to proceed does not count as confirmation that the command was run.
+If the user reports failure, the workflow MUST resolve the failure before continuing dependent
+steps. Rationale: privileged changes remain under the user's direct control.
+
+Linux terminal commands presented to the user MUST assume an existing Linux terminal, including
+Ubuntu in WSL. Commands MUST be directly runnable in that terminal without a `bash`, `bash -c`,
+`wsl`, or equivalent shell-launch wrapper. Instructions MUST NOT tell the user to open or invoke
+Bash before running Linux commands. Shell code fences MUST use `sh` or omit the language label
+instead of using `bash`. Rationale: the user's WSL Ubuntu terminal already provides the shell.
+
 ## Governance
 
 This constitution governs project architecture and development decisions. Amendments MUST be made
@@ -75,4 +87,4 @@ affects platform support, core integration, build workflows, display support, or
 Contributors and reviewers MUST check proposed work against these principles and document any
 approved exception and its rationale.
 
-**Version**: 1.0.0 | **Ratified**: TODO(RATIFICATION_DATE): original adoption date is unknown | **Last Amended**: 2026-10-19
+**Version**: 1.1.0 | **Ratified**: TODO(RATIFICATION_DATE): original adoption date is unknown | **Last Amended**: 2026-10-19
