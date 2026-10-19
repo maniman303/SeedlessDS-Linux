@@ -1,0 +1,3 @@
+[submodule "external/SeedlessDS-Core"]
+	path = external/SeedlessDS-Core
+	url = https://github.com/SapphireRhodonite/SeedlessDS-Core.git
