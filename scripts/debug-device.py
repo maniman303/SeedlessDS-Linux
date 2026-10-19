@@ -23,8 +23,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CONFIG_KEYS = {"ip_address", "root_password", "install_dir"}
-PLACEHOLDERS = {"<CONSOLE_IP>", "<ROOT_SSH_PASSWORD>", "<ABSOLUTE_BINARY_INSTALL_DIRECTORY>"}
+CONFIG_KEYS = {"ip_address", "root_password", "install_dir", "rom_dir"}
+PLACEHOLDERS = {"<CONSOLE_IP>", "<ROOT_SSH_PASSWORD>", "<ABSOLUTE_BINARY_INSTALL_DIRECTORY>", "<ABSOLUTE_ROM_DIRECTORY>"}
 EVIDENCE = None
 
 class Failure(Exception):
@@ -103,7 +103,7 @@ def load_config(path):
     if not isinstance(data, dict):
         raise Failure(2, "configuration", "configuration must be a JSON object")
     if set(data) != CONFIG_KEYS:
-        raise Failure(2, "configuration", "configuration must contain exactly ip_address, root_password, install_dir")
+        raise Failure(2, "configuration", "configuration must contain exactly ip_address, root_password, install_dir, rom_dir")
     if not all(isinstance(data[k], str) for k in CONFIG_KEYS):
         raise Failure(2, "configuration", "configuration fields must be strings")
     try:
@@ -117,6 +117,10 @@ def load_config(path):
     p = Path(dest)
     if dest in PLACEHOLDERS or not p.is_absolute() or os.path.normpath(dest) == "/" or any(x == ".." for x in p.parts) or any(ord(c) < 32 or ord(c) == 127 for c in dest):
         raise Failure(2, "configuration", "invalid field install_dir; use an absolute POSIX directory without traversal")
+    rom_dir = data["rom_dir"]
+    p = Path(rom_dir)
+    if rom_dir in PLACEHOLDERS or not p.is_absolute() or any(x == ".." for x in p.parts) or any(ord(c) < 32 or ord(c) == 127 for c in rom_dir):
+        raise Failure(2, "configuration", "invalid field rom_dir; use an absolute POSIX directory without traversal")
     return data
 
 
@@ -129,8 +133,9 @@ def root_parser():
         if name == "run":
             p.add_argument("--binary", type=Path, required=True)
             p.add_argument("--inventory", type=Path, required=True)
-            p.add_argument("--rom", required=True)
-            p.add_argument("--data-dir", required=True)
+            p.add_argument("--rom", help="target ROM path; defaults to the first readable .nds file in configured rom_dir")
+            p.add_argument("--frontend-config")
+            p.add_argument("--save-dir")
             p.add_argument("--frames", type=int, default=120)
             p.add_argument("--timeout", type=int, default=30)
     return parser
@@ -145,6 +150,19 @@ def check_tools():
 def remote_arg(config):
     ip = ipaddress.ip_address(config["ip_address"])
     return f"root@{ip}"
+
+
+def rom_discovery_command(directory):
+    script = r'''LC_ALL=C
+for candidate in "$1"/*; do
+    case "$candidate" in *.[nN][dD][sS])
+        if [ -f "$candidate" ] && [ -r "$candidate" ]; then printf '%s\n' "$candidate"; exit 0; fi
+        ;;
+    esac
+done
+exit 1
+'''
+    return "sh -c " + shlex.quote(script) + " sh " + shlex.quote(directory)
 
 
 def ssh_command(config, remote, *, input_data=None, timeout=10):
@@ -176,7 +194,7 @@ def classify_ssh(result, stage):
         return
     output = (result.stdout + result.stderr).decode("utf-8", "replace").lower()
     if stage == "preflight" and result.returncode != 255:
-        raise Failure(4, "compatibility", "target architecture, runtime utility, ROM or writable data directory check failed")
+        raise Failure(4, "compatibility", "target architecture, runtime utility or ROM check failed")
     if "host key verification failed" in output or "remote host identification has changed" in output:
         msg = "host verification failed; verify the console fingerprint and enroll it interactively"
     elif "permission denied" in output:
@@ -244,24 +262,22 @@ def audit(binary, inventory_path):
         raise Failure(2, "artifact", "binary or runtime inventory is missing, stale, or not a valid AArch64 ELF")
 
 
-def remote_preflight(config, artifact, rom, data_dir):
+def remote_preflight(config, artifact, rom, save_dir):
     script = r'''set -eu
 [ "$(uname -s)" = Linux ]
 [ "$(uname -m)" = aarch64 ]
 for c in sh mkdir cat chmod mv rm sha256sum timeout ldd; do command -v "$c" >/dev/null; done
 timeout --signal=TERM --kill-after=5s 1 sh -c ':'
 [ -r "$1" ]
-[ -d "$2" ] && [ -w "$2" ]
-if [ -n "$3" ]; then [ -x "$3" ]; fi
 printf 'device=%s kernel=%s arch=%s\n' "$(. /etc/os-release; printf '%s' "${PRETTY_NAME:-Linux}")" "$(uname -r)" "$(uname -m)"
 LC_ALL=C ldd --version 2>&1 | head -1
 '''
     interpreter = artifact.get("interpreter") or ""
-    cmd = "sh -c " + shlex.quote(script) + " sh " + shlex.quote(rom) + " " + shlex.quote(data_dir) + " " + shlex.quote(interpreter)
+    cmd = "sh -c " + shlex.quote(script) + " sh " + shlex.quote(rom) + " " + shlex.quote(save_dir or "") + " " + shlex.quote(interpreter)
     result = ssh_command(config, cmd, timeout=15)
     if result.returncode:
         classify_ssh(result, "preflight")
-        raise Failure(4, "compatibility", "target architecture, runtime utility, ROM or writable data directory check failed")
+        raise Failure(4, "compatibility", "target architecture, runtime utility or ROM check failed")
     out = result.stdout.decode("utf-8", "replace")
     if artifact["glibc"]:
         match = re.search(r"ldd.*?([0-9]+\.[0-9]+)", out, re.I)
@@ -293,10 +309,10 @@ def main():
     if not (1 <= args.frames <= 2**64 - 1) or args.timeout <= 0:
         raise Failure(2, "arguments", "frames must be 1..UINT64_MAX and timeout must be positive")
     rom = args.rom
-    data_dir = args.data_dir
-    if not Path(rom).is_absolute() or not Path(data_dir).is_absolute():
-        raise Failure(2, "arguments", "ROM and data directory must be absolute target paths")
-    redactor = Redactor([config[k] for k in CONFIG_KEYS] + [rom, data_dir])
+    save_dir = args.save_dir
+    if (rom is not None and not Path(rom).is_absolute()) or (save_dir and not Path(save_dir).is_absolute()):
+        raise Failure(2, "arguments", "ROM and nonempty save directory must be absolute target paths")
+    redactor = Redactor([config[k] for k in CONFIG_KEYS] + ([rom] if rom else []) + [save_dir or ""])
     artifact = audit(args.binary, args.inventory)
     EVIDENCE["artifact_sha256"] = artifact["sha256"]
     EVIDENCE["preset"] = artifact["inventory"].get("preset")
@@ -307,7 +323,15 @@ def main():
     except Failure as e:
         raise e
     emit("connection", "passed", "verified root SSH connection established")
-    target_info = remote_preflight(config, artifact, rom, data_dir)
+    if rom is None:
+        try:
+            rom = run_remote(config, rom_discovery_command(config["rom_dir"]), "preflight", timeout=15).strip()
+        except Failure:
+            raise Failure(4, "compatibility", "no readable .nds ROM found in configured rom_dir")
+        if not rom or not Path(rom).is_absolute() or "\n" in rom:
+            raise Failure(4, "compatibility", "no readable .nds ROM found in configured rom_dir")
+        redactor = Redactor([config[k] for k in CONFIG_KEYS] + [rom, save_dir or ""])
+    target_info = remote_preflight(config, artifact, rom, save_dir)
     EVIDENCE["device"] = {"runtime": target_info.strip()}
     emit("compatibility", "passed", "target architecture, runtime and user assets are compatible")
     dest = config["install_dir"]
@@ -335,9 +359,12 @@ def main():
     emit("deployment", "passed", f"verified and promoted sha256={artifact['sha256']}")
     try:
         marker_token = uuid.uuid4().hex
+        frontend_options = (" --config " + shlex.quote(args.frontend_config)) if args.frontend_config else ""
+        if save_dir is not None:
+            frontend_options += " --save-dir " + shlex.quote(save_dir)
         command = ("set -eu; if " + shlex.quote(final) + " --help >/dev/null 2>&1; then "
                    "if timeout --signal=TERM --kill-after=5s " + str(args.timeout) + " " + shlex.quote(final) +
-                   " --data-dir " + shlex.quote(data_dir) + " --frames " + str(args.frames) + " " + shlex.quote(rom) +
+                   frontend_options + " --frames " + str(args.frames) + " " + shlex.quote(rom) +
                    "; then status=0; else status=$?; fi; else status=125; fi; printf '\\n__SEEDLESS_WRAPPER_" + marker_token + "__:%s\\n' \"$status\"; exit 0")
         result = ssh_command(config, command, timeout=args.timeout + 15)
     except Failure:

@@ -24,3 +24,18 @@ Read and follow `.specify/memory/constitution.md` before starting work.
   requires an explicit amendment to Principle VI of the constitution and an update to this file.
 
 The user retains exclusive control over commits and all remote repository activity.
+
+## Local Build, SSH Device Validation
+
+- For device run or debug requests, agents MUST build the current worktree locally in its
+  intended Linux environment first. On an x86-64 host, use the ARM64 cross-build; do not try to
+  compile the project on the device or transfer the source tree for a remote build.
+- After a successful local build, agents MUST transfer the built executable to the ARM64
+  device over SSH and run/debug that executable on the device. Use the repository's deployment
+  helper when available so binary integrity, host verification, and diagnostics are preserved.
+- SSH MAY be used for executable transfer, launching the frontend, collecting runtime
+  diagnostics, and checking required device assets. This does not permit remote Git operations,
+  GitHub actions, commits, pushes, or sudo operations; all existing restrictions remain in
+  force.
+- Agents MUST report local build failures or missing device inputs (such as a ROM) plainly and
+  MUST distinguish a successful build/deployment from a successful emulation run.

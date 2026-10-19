@@ -1,6 +1,6 @@
 # SeedlessDS-Core options inventory
 
-This inventory describes the settings and runtime capabilities available to a Linux frontend in the pinned `external/SeedlessDS-Core` source. It separates core support from frontend work: the repository's current `seedlessds-headless` program is a bounded runner, not an interactive emulator frontend. It currently supplies a ROM path and data directory, validates BIOS files, and discards audio/video output.
+This inventory describes the settings and runtime capabilities available to a Linux frontend in the pinned `external/SeedlessDS-Core` source. It separates core support from frontend work: the repository's `seedlessds-headless` program is a bounded runner, not an interactive emulator frontend. It accepts a ROM plus Linux JSON config/save options, validates BIOS files, and discards audio output; fullscreen video is covered separately by the video-output feature.
 
 ## Support levels
 
@@ -134,3 +134,8 @@ Use global defaults with optional per-game overrides. Validate settings when loa
 - Save-state format and slots: `src/core/state_format.h`, `src/core/state.c`.
 - Cartridge save format: `src/cart/cart.c`, `src/cart/backup.c`.
 - Current Linux limitations: `src/platform/linux/headless_video.c`, `src/platform/linux/headless_audio.c`, and this repository's `src/runner.c`.
+
+
+## Implemented Linux frontend configuration (SeedlessDS-Linux)
+
+The frontend now exposes the bounded subset described in [`specs/003-frontend-json-config/contracts/configuration.md`](../specs/003-frontend-json-config/contracts/configuration.md): 3D threading/render toggles, explicit ARM7/ARM9 BIOS paths, optional firmware path, DS nickname/birthday month/day/color, and battery-save directory. The file defaults to `$HOME/.config/seedlessds/config.json`; CLI `--config` selects an authoritative alternative and `--save-dir` overrides the JSON save directory. JIT, real-time clock and raw `.sav` are fixed frontend policies. Other core features in this inventory remain unexposed.

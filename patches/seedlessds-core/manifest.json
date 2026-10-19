@@ -182,6 +182,11 @@
       "file": "0005-startup-unwind.patch",
       "sha256": "8877daf1810ae85b75aefedfb8930349c0b617d2518d52125b41b247dc9e75de",
       "purpose": "Initialize the startup unwind target before BIOS/memory setup, use compiler-recognized setjmp calls, and diagnose missing or incorrectly sized BIOS assets."
+    },
+    {
+      "file": "0006-frontend-config-paths.patch",
+      "sha256": "a499d70eacbe406e1db779ba58e4914652f0fa6f0b9b49ac80615eecfd44128f",
+      "description": "Expose explicit Linux BIOS, firmware, profile and direct raw-save paths through a stable frontend bridge."
     }
   ],
   "notes": "Explicit source inventory captured from the pinned core revision; update requires review when this list changes."

@@ -1,0 +1,325 @@
+diff --git a/include/seedlessds/linux_config.h b/include/seedlessds/linux_config.h
+--- a/include/seedlessds/linux_config.h
++++ b/include/seedlessds/linux_config.h
+@@ -0,0 +1,23 @@
++#ifndef SEEDLESSDS_LINUX_CONFIG_H
++#define SEEDLESSDS_LINUX_CONFIG_H
++#include <stddef.h>
++#include <stdint.h>
++#include "seedlessds/nds.h"
++typedef struct nds_linux_config_paths {
++    size_t struct_size;
++    const char *bios_arm7, *bios_arm9, *firmware_path, *save_path;
++    const uint16_t *nickname;
++    size_t nickname_units;
++    uint32_t color, birthday_month, birthday_day;
++} nds_linux_config_paths_t;
++int nds_linux_config_set_paths(const nds_linux_config_paths_t *paths);
++void nds_linux_config_reset(void);
++int nds_linux_config_active(void);
++const char *nds_linux_config_bios_arm7(void);
++const char *nds_linux_config_bios_arm9(void);
++const char *nds_linux_config_firmware(void);
++const char *nds_linux_config_save_path(void);
++void nds_linux_config_apply_profile(nds_t *nds);
++void nds_linux_config_save_error(void);
++int nds_linux_config_save_failed(void);
++#endif
+diff --git a/src/platform/files.c b/src/platform/files.c
+--- a/src/platform/files.c
++++ b/src/platform/files.c
+@@ -29,7 +29,10 @@
+     const char *dir     = (const char *)(obj + 0x8F838);
+ 
+     char path[0x410];
+-    str_vsprintf_limit_1024(path, (long)name, format, dir, '/', '/', name);
++    if (name[0] == '/')
++        str_vsprintf_limit_1024(path, (long)name, "%s", name);
++    else
++        str_vsprintf_limit_1024(path, (long)name, format, dir, '/', '/', name);
+ 
+     unsigned char *r = (unsigned char *)files_jni_call_static_method_build_result(path, mode);
+     if (r == 0) return -1;
+diff --git a/src/memory/mirror.c b/src/memory/mirror.c
+--- a/src/memory/mirror.c
++++ b/src/memory/mirror.c
+@@ -1,4 +1,7 @@
+ #include <stdint.h>
++#include <errno.h>
++#include <sys/stat.h>
++#include "seedlessds/linux_config.h"
+ #include <stdio.h>
+ #include "hires_runtime.h"
+ #include "blob_symbols.h"
+@@ -530,38 +533,31 @@
+     uint8_t *flags = &bus->bios_flags;
+     *flags = 0;
+     {
+-        int r = read_exact_size(pcpu, DATA_BIOS9_REAL, bus->bios9, (uint32_t)sizeof bus->bios9);
++        const char *path = nds_linux_config_bios_arm9();
++        int r = path ? read_exact_size(pcpu, path, bus->bios9, (uint32_t)sizeof bus->bios9)
++                     : read_exact_size(pcpu, DATA_BIOS9_REAL, bus->bios9, (uint32_t)sizeof bus->bios9);
++        if (r < 0 && !path) { r = read_exact_size(pcpu, DATA_BIOS9_REPLACEMENT, bus->bios9, (uint32_t)sizeof bus->bios9); if (r >= 0) *flags |= 0x2; }
++        if (r < 0) return -1;
++    }
++
++    {
++        const char *path = nds_linux_config_bios_arm7();
++        int r = path ? read_exact_size(pcpu, path, bus->bios7, (uint32_t)sizeof bus->bios7)
++                     : read_exact_size(pcpu, DATA_BIOS7_REAL, bus->bios7, (uint32_t)sizeof bus->bios7);
++        if (r < 0 && !path) { r = read_exact_size(pcpu, DATA_BIOS7_REPLACEMENT, bus->bios7, (uint32_t)sizeof bus->bios7); if (r >= 0) *flags |= 0x1; }
++        if (r < 0) return -1;
++    }
++
++    {
++        uint8_t *fw = ((bus_t *)ctx)->firmware_image;
++        const char *path = nds_linux_config_firmware();
++        int r = path ? (path[0] ? read_exact_size(pcpu, path, fw, FIRMWARE_IMAGE_SIZE) : -1)
++                     : read_exact_size(pcpu, DATA_FIRMWARE_MODIFIED, fw, FIRMWARE_IMAGE_SIZE);
++        if (r < 0 && !path) r = read_exact_size(pcpu, NAME_FW_REAL, fw, FIRMWARE_IMAGE_SIZE);
+         if (r < 0) {
+-            r = read_exact_size(pcpu, DATA_BIOS9_REPLACEMENT, bus->bios9, (uint32_t)sizeof bus->bios9);
+-            if (r < 0) {
+-                fprintf(stderr, "seedlessds[error]: BIOS ARM9: provide system/nds_bios_arm9.bin or system/nds_bios_arm9_replacement.bin with the required size (4096 bytes) under --data-dir\n");
+-                return -1;
+-            }
+-            *flags |= 0x2;
+-        }
+-    }
+-
+-    {
+-        int r = read_exact_size(pcpu, DATA_BIOS7_REAL, bus->bios7, (uint32_t)sizeof bus->bios7);
+-        if (r < 0) {
+-            r = read_exact_size(pcpu, DATA_BIOS7_REPLACEMENT, bus->bios7, (uint32_t)sizeof bus->bios7);
+-            if (r < 0) {
+-                fprintf(stderr, "seedlessds[error]: BIOS ARM7: provide system/nds_bios_arm7.bin or system/nds_bios_arm7_replacement.bin with the required size (16384 bytes) under --data-dir\n");
+-                return -1;
+-            }
+-            *flags |= 0x1;
+-        }
+-    }
+-
+-    {
+-        uint8_t *fw = ((bus_t *)ctx)->firmware_image;
+-        int r = read_exact_size(pcpu, DATA_FIRMWARE_MODIFIED, fw, FIRMWARE_IMAGE_SIZE);
+-        if (r < 0) {
+-            r = read_exact_size(pcpu, NAME_FW_REAL, fw, FIRMWARE_IMAGE_SIZE);
+-            if (r < 0) {
+-                p_memset(fw, 0, FIRMWARE_IMAGE_SIZE);
+-                firmware_header_build((firmware_header_t *)fw);
+-            }
++            if (path && path[0]) return -1;
++            p_memset(fw, 0, FIRMWARE_IMAGE_SIZE);
++            firmware_header_build((firmware_header_t *)fw);
+         }
+     }
+ 
+diff --git a/src/cart/cart.c b/src/cart/cart.c
+--- a/src/cart/cart.c
++++ b/src/cart/cart.c
+@@ -1,4 +1,7 @@
+ #include <stdint.h>
++#include <errno.h>
++#include <sys/stat.h>
++#include "seedlessds/linux_config.h"
+ #include "hires_runtime.h"
+ #include "blob_symbols.h"
+ #include "core/data_paths.h"
+@@ -465,9 +468,16 @@
+ 
+     uint32_t dsv = (marks->raw_sav_format == 0);
+ 
+-    str_vsnprintf_limited_swapped_args(path, PATH, PATH,
++    const char *linux_save = nds_linux_config_save_path();
++    if (linux_save) {
++        size_t length = strlen(linux_save);
++        if (length >= sizeof path) return 0;
++        memcpy(path, linux_save, length + 1);
++    } else {
++        str_vsnprintf_limited_swapped_args(path, PATH, PATH,
+                         dsv ? "%s%cbackup%c%s.dsv" : "%s%cbackup%c%s.sav",
+                         ((nds_t *)mod)->save_dir, '/', '/', ((nds_t *)mod)->rom_name);
++    }
+ 
+     spi_memory_t *stream = &ctx->backup;
+     game_database_entry_t *ent = 0;
+diff --git a/src/spi/firmware.c b/src/spi/firmware.c
+--- a/src/spi/firmware.c
++++ b/src/spi/firmware.c
+@@ -1,4 +1,7 @@
+ #include <stdint.h>
++#include <errno.h>
++#include <sys/stat.h>
++#include "seedlessds/linux_config.h"
+ #include "hires_runtime.h"
+ #include "blob_symbols.h"
+ #include <string.h>
+@@ -172,6 +175,7 @@
+ 
+     spi_memory_mount(&spi->firmware, 1, machine->bus.firmware_image, FIRMWARE_IMAGE_SIZE, 0, 1, 0);
+     spi_memory_set_path(&spi->firmware, path);
++    nds_linux_config_apply_profile(machine);
+ }
+ 
+ static int (*core_vsnprintf)(char *, size_t, const char *, va_list);
+diff --git a/src/spi/memory.c b/src/spi/memory.c
+--- a/src/spi/memory.c
++++ b/src/spi/memory.c
+@@ -1,4 +1,7 @@
+ #include <stdint.h>
++#include <errno.h>
++#include <sys/stat.h>
++#include "seedlessds/linux_config.h"
+ #include <string.h>
+ #include "hires_runtime.h"
+ #include "blob_symbols.h"
+@@ -211,6 +214,7 @@
+ static int    (*core_ftruncate)(int, long);
+ 
+ long spi_memory_save_file(spi_memory_t *m) {
++    int failed = 0;
+     if (!core_fwrite) {
+         core_fwrite    = (size_t (*)(const void *, size_t, size_t, void *))sym_libc_fwrite;
+         core_fclose    = (int (*)(void *))sym_libc_fclose;
+@@ -223,20 +227,22 @@
+     if (m->write_whole_file != 0) {
+         void *(*open_fn)(const char *, const char *) = platform_file_open;
+         void *f = open_fn(m->path, "wb");
+-        if (f == 0) return 0;
++        if (f == 0) { nds_linux_config_save_error(); return -1; }
+         uint32_t n = m->mask;
+-        core_fwrite(m->data, (size_t)(n + 1), 1, f);
+-        return core_fclose(f);
++        if (core_fwrite(m->data, (size_t)(n + 1), 1, f) != 1) failed = 1;
++        if (core_fclose(f) != 0) failed = 1;
++        if (failed) { nds_linux_config_save_error(); return -1; }
++        return 0;
+     }
+ 
+     void *f = m->file;
+-    if (f == 0) return 0;
++    if (f == 0) { nds_linux_config_save_error(); return -1; }
+ 
+     uint32_t size = m->mask;
+     uint32_t regions = (size + SPI_MEMORY_SECTOR_BYTES) >> SPI_MEMORY_SECTOR_SHIFT;
+ 
+     if (m->truncate_size != 0) {
+-        core_ftruncate(core_fileno(f), m->truncate_size);
++        if (core_ftruncate(core_fileno(f), m->truncate_size) != 0) failed = 1;
+         m->truncate_size = 0;
+     }
+ 
+@@ -246,12 +252,12 @@
+         uint64_t off = base;
+         while (w) {
+             if (w & 1) {
+-                core_fseek(f, (long)off, 0);
+-                core_fwrite(m->data + off, 512, 1, f);
++                if (core_fseek(f, (long)off, 0) != 0 || core_fwrite(m->data + off, 512, 1, f) != 1) failed = 1;
+             }
+             w >>= 1;
+             off += 0x200;
+         }
++        if (failed) { nds_linux_config_save_error(); return -1; }
+         m->dirty_sectors[i] = 0;
+     }
+ 
+@@ -283,11 +289,12 @@
+         hdr[102] = hdr[103] = hdr[104] = hdr[105] = 0;
+         for (int i = 0; i < 16; i++) hdr[106 + i] = k2[i];
+ 
+-        core_fseek(f, (long)v, 0);
+-        core_fwrite(hdr, 122, 1, f);
+-        m->footer_written = 1;
+-    }
+-    return core_fflush(f);
++        if (core_fseek(f, (long)v, 0) != 0 || core_fwrite(hdr, 122, 1, f) != 1) failed = 1;
++        else m->footer_written = 1;
++    }
++    if (core_fflush(f) != 0) failed = 1;
++    if (failed) { nds_linux_config_save_error(); return -1; }
++    return 0;
+ }
+ 
+ long spi_memory_save_tick(spi_memory_t *m) {
+@@ -350,7 +357,16 @@
+ 
+     int fail = (f == 0);
+     uint32_t n_read = 0;
++    if (fail && nds_linux_config_active()) {
++        struct stat st;
++        if (stat(path, &st) == 0 || errno != ENOENT) { nds_linux_config_save_error(); return -1; }
++    }
+     if (!fail && core_fread(buf, size, 1, f) != 1) fail = 1;
++    if (fail && f && nds_linux_config_active()) {
++        core_fclose_8(f);
++        nds_linux_config_save_error();
++        return -1;
++    }
+ 
+     if (!fail) {
+         uint32_t expected = (fb == 0) ? size : size + 122;
+@@ -360,6 +376,10 @@
+         core_fseek_8(f, where, 0);
+         core_fclose_8(f);
+ 
++        if (nds_linux_config_active() && expected != n_read) {
++            nds_linux_config_save_error();
++            return -1;
++        }
+         if (expected != n_read) m->truncate_size = expected;
+ 
+         if (n_read >= size) {
+@@ -390,9 +410,10 @@
+     void *nf = open_fn(copy, "rb+");
+     if (nf == 0) {
+         void *tmp = open_fn(copy, "wb");
+-        core_fclose_8(tmp);
++        if (tmp == 0 || core_fclose_8(tmp) != 0) { nds_linux_config_save_error(); return -1; }
+         nf = open_fn(copy, "rb+");
+     }
++    if (nf == 0 && nds_linux_config_active()) { nds_linux_config_save_error(); return -1; }
+     m->file = nf;
+     m->status = 0;
+     return (long)(intptr_t)nf;
+diff --git a/src/core/nds_api.c b/src/core/nds_api.c
+--- a/src/core/nds_api.c
++++ b/src/core/nds_api.c
+@@ -8,6 +8,8 @@
+ #include "core/nds_state.h"
+ #include "frontend/frontend.h"
+ #include "core_internals.h"
++#include "seedlessds/linux_config.h"
++#include <stdatomic.h>
+ 
+ extern void platform_set(const nds_platform_t *platform);
+ extern void seedless_linux_video_shutdown(void);
+@@ -124,6 +126,28 @@
+                                                         & CONFIG_VOLUME_MASK));
+ }
+ 
++static char linux_bios7[1024], linux_bios9[1024], linux_firmware[1024], linux_save[1024];
++static _Atomic int linux_active, linux_save_error;
++static uint16_t linux_nickname[10]; static size_t linux_nickname_units;
++static uint32_t linux_profile_color, linux_profile_month, linux_profile_day;
++int nds_linux_config_set_paths(const nds_linux_config_paths_t *p) {
++    if (!p || p->struct_size < sizeof(*p) || !p->bios_arm7 || !p->bios_arm9 || !p->firmware_path || !p->save_path || p->nickname_units > 10 || (p->nickname_units && !p->nickname)) return 0;
++    const char *src[4]={p->bios_arm7,p->bios_arm9,p->firmware_path,p->save_path}; char *dst[4]={linux_bios7,linux_bios9,linux_firmware,linux_save};
++    for (unsigned i=0;i<4;i++) { size_t n=strlen(src[i]); if(n>=1024) return 0; memcpy(dst[i],src[i],n+1); }
++    linux_nickname_units=p->nickname_units; if(p->nickname_units) memcpy(linux_nickname,p->nickname,p->nickname_units*sizeof(uint16_t));
++    linux_profile_color=p->color; linux_profile_month=p->birthday_month; linux_profile_day=p->birthday_day;
++    atomic_store(&linux_save_error,0); atomic_store(&linux_active,1); return 1;
++}
++void nds_linux_config_reset(void){atomic_store(&linux_active,0);atomic_store(&linux_save_error,0);memset(linux_bios7,0,sizeof linux_bios7);memset(linux_bios9,0,sizeof linux_bios9);memset(linux_firmware,0,sizeof linux_firmware);memset(linux_save,0,sizeof linux_save);}
++int nds_linux_config_active(void){return atomic_load(&linux_active);}
++const char *nds_linux_config_bios_arm7(void){return nds_linux_config_active()?linux_bios7:0;}
++const char *nds_linux_config_bios_arm9(void){return nds_linux_config_active()?linux_bios9:0;}
++const char *nds_linux_config_firmware(void){return nds_linux_config_active()?linux_firmware:0;}
++const char *nds_linux_config_save_path(void){return nds_linux_config_active()?linux_save:0;}
++void nds_linux_config_apply_profile(nds_t *nds){if(nds_linux_config_active()&&linux_nickname_units)nds_set_firmware_user(nds,linux_nickname,linux_nickname_units,1u|(linux_profile_color<<8)|((linux_profile_month-1)<<16)|(linux_profile_day<<24));}
++void nds_linux_config_save_error(void){atomic_store(&linux_save_error,1);}
++int nds_linux_config_save_failed(void){return atomic_load(&linux_save_error);}
++
+ void nds_set_firmware_user(nds_t *nds, const uint16_t *nickname, size_t units,
+                            uint32_t packed)
+ {

@@ -1,5 +1,6 @@
 {
   "ip_address": "<CONSOLE_IP>",
   "root_password": "<ROOT_SSH_PASSWORD>",
-  "install_dir": "<ABSOLUTE_BINARY_INSTALL_DIRECTORY>"
+  "install_dir": "<ABSOLUTE_BINARY_INSTALL_DIRECTORY>",
+  "rom_dir": "<ABSOLUTE_ROM_DIRECTORY>"
 }

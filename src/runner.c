@@ -15,6 +15,9 @@
 #include <string.h>
 #include <unistd.h>
 #include "runner.h"
+#include "config.h"
+#include "launch_options.h"
+#include "core_config.h"
 #include "platform/linux/compat.h"
 #include <seedlessds/control.h>
 #include <seedlessds/nds.h>
@@ -251,7 +254,7 @@ static void on_signal(int signal_number)
 static void *load_worker(void *unused)
 {
     (void)unused;
-    nds_rom_open_t open = { .path = run.rom_path, .state_slot = -1 };
+    nds_rom_open_t open = { .path = run.rom_path, .config_bits = seedless_core_config_bits(), .state_slot = -1 };
     install_thread_fatal_stack();
     runner_phase = 2;
     run.load_succeeded = nds_load_rom(run.core, &open);
@@ -261,122 +264,74 @@ static void *load_worker(void *unused)
     return NULL;
 }
 
-static int bios_available(int root, const char *path, off_t size)
-{
-    struct stat st;
-    int fd = openat(root, path, O_RDONLY | O_NONBLOCK);
-    if (fd < 0) return 0;
-    int valid = fstat(fd, &st) == 0 && S_ISREG(st.st_mode) && st.st_size == size;
-    close(fd);
-    return valid;
-}
-
-static int validate_bios(const char *data_dir)
-{
-    int root = open(data_dir, O_RDONLY | O_DIRECTORY);
-    const char *cpus[] = {"arm9", "arm7"};
-    const off_t sizes[] = {4096, 16384};
-    int valid = 1;
-    for (size_t i = 0; i < 2; ++i) {
-        char original[64], replacement[64];
-        snprintf(original, sizeof original, "system/nds_bios_%s.bin", cpus[i]);
-        snprintf(replacement, sizeof replacement, "system/nds_bios_%s_replacement.bin", cpus[i]);
-        if (root < 0 || (!bios_available(root, original, sizes[i]) &&
-                         !bios_available(root, replacement, sizes[i]))) {
-            fprintf(stderr, "seedlessds[error]: BIOS %s missing or invalid: provide %s or %s (%jd bytes) under --data-dir; exiting before core startup\n",
-                    cpus[i], original, replacement, (intmax_t)sizes[i]);
-            valid = 0;
-        }
-    }
-    if (root >= 0) close(root);
-    return valid;
-}
-
-static int parse_limit(const char *text, uint64_t *out)
-{
-    uint64_t value = 0;
-    if (!text || !*text) return 0;
-    for (const unsigned char *p = (const unsigned char *)text; *p; ++p) {
-        if (*p < '0' || *p > '9') return 0;
-        unsigned digit = (unsigned)(*p - '0');
-        if (value > (UINT64_MAX - digit) / 10u) return 0;
-        value = value * 10u + digit;
-    }
-    if (value == 0) return 0;
-    *out = value;
-    return 1;
-}
-
-static void usage(FILE *stream)
-{
-    fprintf(stream, "Usage: seedlessds-headless [--frames N] [--data-dir DIR] [--] ROM\n");
-}
+static void usage(FILE *stream) { seedless_launch_usage(stream); }
 
 int seedless_runner_main(int argc, char **argv)
 {
-    const char *data_dir = ".";
     uint64_t requested = 0;
-    int have_frames = 0, have_data = 0, positional = 0, i, result = 1;
+    int have_frames = 0, result = 1;
     const char *failure_operation = "load";
-    char *canonical_rom = NULL, *canonical_data = NULL;
+    char *canonical_rom = NULL;
+    seedless_launch_options_t options;
+    seedless_config_t config = {0};
+    seedless_runtime_config_t runtime = {0};
+    seedless_config_error_t config_error = {0};
+    char launch_error[256] = {0}, core_error[256] = {0};
     struct stat st;
     nds_control_status_t status;
     struct sigaction action;
 
     memset(&run, 0, sizeof run);
     atomic_init(&run.worker_done, 0);
-    for (i = 1; i < argc; ++i) {
-        const char *arg = argv[i];
-        if (!positional && strcmp(arg, "--help") == 0) { usage(stdout); return 0; }
-        if (!positional && strcmp(arg, "--") == 0) { positional = 1; continue; }
-        if (!positional && strcmp(arg, "--frames") == 0) {
-            if (have_frames || ++i >= argc || !parse_limit(argv[i], &requested)) {
-                usage(stderr); fprintf(stderr, "Invalid or duplicate --frames value\n"); return 2;
-            }
-            have_frames = 1; continue;
-        }
-        if (!positional && strcmp(arg, "--data-dir") == 0) {
-            if (have_data || ++i >= argc || !*argv[i]) {
-                usage(stderr); fprintf(stderr, "Invalid or duplicate --data-dir value\n"); return 2;
-            }
-            data_dir = argv[i]; have_data = 1; continue;
-        }
-        if (!positional && arg[0] == '-') {
-            usage(stderr); fprintf(stderr, "Unknown option: %s\n", arg); return 2;
-        }
-        if (run.rom_path) { usage(stderr); fprintf(stderr, "Expected exactly one ROM path\n"); return 2; }
-        run.rom_path = arg;
+    if (!seedless_launch_parse(argc, argv, &options, launch_error, sizeof launch_error)) {
+        usage(stderr);
+        fprintf(stderr, "seedlessds[error]: %s\n", launch_error);
+        printf("result=failed frames=0 operation=arguments\n");
+        return 2;
     }
-    if (!run.rom_path) { usage(stderr); fprintf(stderr, "A ROM path is required\n"); return 2; }
-    canonical_rom = realpath(run.rom_path, NULL);
+    if (options.help) { usage(stdout); return 0; }
+    requested = options.frames;
+    have_frames = options.have_frames;
+    canonical_rom = realpath(options.rom_path, NULL);
     if (!canonical_rom || stat(canonical_rom, &st) != 0 || !S_ISREG(st.st_mode) || access(canonical_rom, R_OK) != 0) {
-        fprintf(stderr, "ROM must be a readable regular file: %s\n", run.rom_path);
+        fprintf(stderr, "seedlessds[error]: ROM must be a readable regular file: %s\n", options.rom_path);
+        printf("result=failed frames=0 operation=rom\n");
         free(canonical_rom); return 2;
     }
-    canonical_data = realpath(data_dir, NULL);
-    if (!canonical_data || stat(canonical_data, &st) != 0 || !S_ISDIR(st.st_mode) ||
-        access(canonical_data, W_OK | X_OK) != 0) {
-        fprintf(stderr, "Data directory must exist and be writable: %s\n", data_dir);
-        free(canonical_rom); free(canonical_data); return 2;
+    if (!seedless_config_load_or_create(&config, options.have_config ? options.config_path : NULL, &config_error)) {
+        fprintf(stderr, "seedlessds[error]: config=%s key=%s: %s%s%s\n",
+                config.selected_path ? config.selected_path : (options.config_path ? options.config_path : "<default>"),
+                config_error.key, config_error.message,
+                config_error.system_errno ? ": " : "",
+                config_error.system_errno ? strerror(config_error.system_errno) : "");
+        printf("result=failed frames=0 operation=config\n");
+        free(canonical_rom); seedless_config_free(&config); return 1;
     }
-    run.rom_path = canonical_rom;
-    if (!validate_bios(canonical_data)) {
-        fflush(stderr);
-        printf("result=failed frames=0 operation=bios\n");
-        free(canonical_rom); free(canonical_data); return 1;
+    if (!seedless_config_resolve(&config, canonical_rom, &options, &runtime, &config_error)) {
+        fprintf(stderr, "seedlessds[error]: config=%s key=%s: %s%s%s\n", config.selected_path,
+                config_error.key, config_error.message,
+                config_error.system_errno ? ": " : "",
+                config_error.system_errno ? strerror(config_error.system_errno) : "");
+        printf("result=failed frames=0 operation=%s\n",
+               !strncmp(config_error.key, "firmware.", 9) ? "firmware" :
+               !strncmp(config_error.key, "emulation.", 10) ? "save" : "config");
+        free(canonical_rom); seedless_config_free(&config); seedless_runtime_config_free(&runtime);
+        return 1;
     }
+    free(canonical_rom); canonical_rom = NULL;
+    if (!seedless_core_config_apply(&config, &runtime, core_error, sizeof core_error)) {
+        fprintf(stderr, "seedlessds[error]: %s\n", core_error);
+        seedless_core_config_reset(); seedless_config_free(&config); seedless_runtime_config_free(&runtime);
+        return 1;
+    }
+    run.rom_path = runtime.rom_path;
     run.requested_frames = requested;
     run.frame_limit_set = have_frames;
     run.state = SEEDLESS_RUN_VALIDATED;
     long page_size = sysconf(_SC_PAGESIZE);
     if (page_size <= 0 || page_size > 0x4000 || (0x4000 % page_size) != 0) {
         fprintf(stderr, "Unsupported host page size for core fixed mappings: %ld\n", page_size);
-        free(canonical_rom); free(canonical_data); return 1;
-    }
-    if (setenv("SEEDLESS_ROOT", canonical_data, 1) != 0) {
-        perror("SEEDLESS_ROOT");
-        printf("result=failed frames=0 operation=initialize\n");
-        free(canonical_rom); free(canonical_data); return 1;
+        seedless_core_config_reset(); seedless_config_free(&config); seedless_runtime_config_free(&runtime); return 1;
     }
 
     memset(&action, 0, sizeof action);
@@ -391,7 +346,7 @@ int seedless_runner_main(int argc, char **argv)
     if (!run.core) {
         fprintf(stderr, "Core initialization failed\n");
         printf("result=failed frames=0 operation=initialize\n");
-        free(canonical_rom); free(canonical_data); return 1;
+        seedless_core_config_reset(); seedless_config_free(&config); seedless_runtime_config_free(&runtime); return 1;
     }
     fprintf(stderr, "seedlessds[info]: core initialization completed\n");
     run.state = SEEDLESS_RUN_INITIALIZED;
@@ -451,7 +406,21 @@ int seedless_runner_main(int argc, char **argv)
     nds_control_status(&status);
     run.frames = status.frames;
     run.signal_number = stop_signal;
-    if (stop_signal) {
+    if (run.control_started) nds_control_end();
+    nds_destroy(run.core);
+    run.core = NULL;
+    run.state = run.outcome == SEEDLESS_OUTCOME_FAILED ? SEEDLESS_RUN_FAILED : SEEDLESS_RUN_STOPPED;
+    int save_error = seedless_core_config_save_error();
+    if (save_error) {
+        fprintf(stderr, "seedlessds[error]: operation=save: core reported a cartridge save write or flush failure\n");
+        result = 1; failure_operation = "save"; run.outcome = SEEDLESS_OUTCOME_FAILED; run.state = SEEDLESS_RUN_FAILED;
+    }
+    if (save_error) {
+        run.outcome = SEEDLESS_OUTCOME_FAILED;
+        run.state = SEEDLESS_RUN_FAILED;
+        printf("result=failed frames=%" PRIu64 " operation=save\n", status.frames);
+    }
+    else if (stop_signal) {
         run.outcome = SEEDLESS_OUTCOME_INTERRUPTED;
         printf("result=interrupted frames=%" PRIu64 " signal=%s\n", status.frames, stop_signal == SIGINT ? "SIGINT" : "SIGTERM");
     }
@@ -462,12 +431,9 @@ int seedless_runner_main(int argc, char **argv)
         run.state = SEEDLESS_RUN_FAILED;
         printf("result=failed frames=%" PRIu64 " operation=%s\n", status.frames, failure_operation);
     }
-    if (run.control_started) nds_control_end();
-    nds_destroy(run.core);
-    run.core = NULL;
-    run.state = run.outcome == SEEDLESS_OUTCOME_FAILED ? SEEDLESS_RUN_FAILED : SEEDLESS_RUN_STOPPED;
-    free(canonical_rom); free(canonical_data);
-    return stop_signal ? (stop_signal == SIGINT ? 130 : 143) : result;
+    seedless_core_config_reset();
+    seedless_config_free(&config); seedless_runtime_config_free(&runtime);
+    return save_error ? 1 : (stop_signal ? (stop_signal == SIGINT ? 130 : 143) : result);
 
 cleanup:
     printf("result=failed frames=0 operation=%s\n", failure_operation);
@@ -475,6 +441,7 @@ cleanup:
     nds_destroy(run.core);
     run.core = NULL;
     run.state = SEEDLESS_RUN_FAILED;
-    free(canonical_rom); free(canonical_data);
+    if (seedless_core_config_save_error()) failure_operation = "save";
+    seedless_core_config_reset(); seedless_config_free(&config); seedless_runtime_config_free(&runtime);
     return 1;
 }

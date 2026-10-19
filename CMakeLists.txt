@@ -40,6 +40,10 @@ include("${CMAKE_SOURCE_DIR}/cmake/SeedlessCore.cmake")
 add_executable(seedlessds-headless
     src/main.c
     src/runner.c
+    src/config.c
+    src/config_json.c
+    src/launch_options.c
+    src/core_config.c
     src/platform/linux/platform.c)
 target_include_directories(seedlessds-headless PRIVATE
     "${CMAKE_SOURCE_DIR}/src"

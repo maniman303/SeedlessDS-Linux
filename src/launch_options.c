@@ -1,0 +1,9 @@
+#include "launch_options.h"
+#include <errno.h>
+#include <inttypes.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+static int parse_frames(const char*s,uint64_t*out){if(!s||!*s)return 0;uint64_t v=0;for(const unsigned char*p=(const unsigned char*)s;*p;p++){if(*p<'0'||*p>'9')return 0;unsigned d=*p-'0';if(v>(UINT64_MAX-d)/10)return 0;v=v*10+d;}if(!v)return 0;*out=v;return 1;}
+int seedless_launch_parse(int argc,char**argv,seedless_launch_options_t*o,char*error,unsigned cap){if(!o)return 0;memset(o,0,sizeof*o);int positional=0;for(int i=1;i<argc;i++){const char*a=argv[i];if(!positional&&!strcmp(a,"--help")){o->help=1;continue;}if(!positional&&!strcmp(a,"--")){positional=1;continue;}if(!positional&&(!strcmp(a,"--config")||!strcmp(a,"--save-dir")||!strcmp(a,"--frames"))){const char*opt=a;if(i+1>=argc){snprintf(error,cap,"%s requires a value",opt);return 0;}const char*v=argv[++i];if(!strcmp(opt,"--config")){if(o->have_config||!*v){snprintf(error,cap,"invalid or duplicate --config");return 0;}o->config_path=v;o->have_config=1;}else if(!strcmp(opt,"--save-dir")){if(o->have_save_dir){snprintf(error,cap,"duplicate --save-dir");return 0;}o->save_dir=v;o->have_save_dir=1;}else{if(o->have_frames||!parse_frames(v,&o->frames)){snprintf(error,cap,"invalid or duplicate --frames value");return 0;}o->have_frames=1;}continue;}if(!positional&&a[0]=='-'){snprintf(error,cap,"unknown option: %s",a);return 0;}if(o->rom_path){snprintf(error,cap,"expected exactly one ROM path");return 0;}o->rom_path=a;}if(o->help)return 1;if(!o->rom_path){snprintf(error,cap,"ROM path is required");return 0;}return 1;}
+void seedless_launch_usage(FILE*f){fprintf(f,"Usage: seedlessds-headless [--config PATH] [--save-dir DIR] [--frames N] [--] ROM\n       seedlessds-headless --help\nDefault config: $HOME/.config/seedlessds/config.json\n");}

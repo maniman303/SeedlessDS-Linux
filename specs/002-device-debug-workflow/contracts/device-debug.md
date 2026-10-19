@@ -4,7 +4,7 @@ This is the planned implementation interface; commands do not exist yet.
 
 ```text
 python3 scripts/debug-device.py check [--config PATH]
-python3 scripts/debug-device.py run [--config PATH] --binary PATH --inventory PATH --rom REMOTE_PATH --data-dir REMOTE_PATH [--frames N] [--timeout SECONDS]
+python3 scripts/debug-device.py run [--config PATH] --binary PATH --inventory PATH [--rom REMOTE_PATH] [--frontend-config REMOTE_PATH] [--save-dir REMOTE_PATH] [--frames N] [--timeout SECONDS]
 ```
 
 Both commands resolve the default `.device.local` relative to repository root, regardless of caller directory. Explicit local paths resolve from caller directory. `check` validates configuration and host tools only and makes no network connections. `run` performs check, artifact audit, connection, target compatibility/runtime-input checks, staged deployment, verification, promotion, help launch, bounded execution and evidence capture in that order. Help must not require a configuration file. No CLI flag accepts a password.
@@ -15,11 +15,12 @@ Configuration template schema:
 {
   "ip_address": "<CONSOLE_IP>",
   "root_password": "<ROOT_SSH_PASSWORD>",
-  "install_dir": "<ABSOLUTE_BINARY_INSTALL_DIRECTORY>"
+  "install_dir": "<ABSOLUTE_BINARY_INSTALL_DIRECTORY>",
+  "rom_dir": "<ABSOLUTE_ROM_DIRECTORY>"
 }
 ```
 
-Validation and ownership rules are in [data-model.md](../data-model.md). During the implementation configuration task the implementer MUST explicitly request all three actual values before creating/populating `.device.local`. No private values are needed to generate the template, plan, tests or scripts. Existing valid settings are reused; no automatic overwrite. File creation must not put credentials in displayed shell commands/history.
+When `--rom` is omitted, `run` selects the first readable `.nds` file in `rom_dir`. Validation and ownership rules are in [data-model.md](../data-model.md). During the implementation configuration task the implementer MUST explicitly request all three actual values before creating/populating `.device.local`. No private values are needed to generate the template, plan, tests or scripts. Existing valid settings are reused; no automatic overwrite. File creation must not put credentials in displayed shell commands/history.
 
 SSH user is root, port 22; IP supports IPv4 and IPv6. Required known-host entry is enrolled by a separate interactive SSH command after the developer verifies the fingerprint through the console or another trusted source. Automated sessions use strict verification and bounded connection attempts. Password auth only; no implicit fallback to agent/key auth. Unknown/changed host key is a host-verification failure with recovery guidance, never an automatic replacement.
 

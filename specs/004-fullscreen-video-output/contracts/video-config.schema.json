@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SeedlessDS frontend video configuration overlay",
+  "description": "Only the video additions are described here. Apply alongside the feature 003 full configuration contract; defaults are applied by the loader without rewriting existing files.",
+  "type": "object",
+  "properties": {
+    "video": {
+      "type": "object",
+      "description": "All video output configuration preferences introduced by feature 004.",
+      "default": {},
+      "properties": {
+        "display_mode": {
+          "type": "string",
+          "enum": ["auto", "dual_screen", "single_screen"],
+          "default": "auto",
+          "description": "auto and dual_screen use separate physical displays when available and a single-display layout otherwise; single_screen always uses the primary display."
+        },
+        "swap_screens": {
+          "type": "boolean",
+          "default": false,
+          "description": "Exchange physical display assignments in dual output, or top/bottom image positions within a single-display layout."
+        },
+        "single_screen_layout": {
+          "type": "string",
+          "enum": ["vertical", "horizontal"],
+          "default": "vertical",
+          "description": "Both screens stacked vertically or arranged horizontally; ignored for effective dual output."
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

@@ -2,20 +2,20 @@
 set -Eeuo pipefail
 
 fail() { printf 'validate-headless: ERROR: %s\n' "$*" >&2; exit 1; }
-[[ $# == 3 ]] || fail 'usage: bash scripts/validate-headless.sh BINARY ROM DATA_DIR'
+[[ $# == 3 ]] || fail 'usage: bash scripts/validate-headless.sh BINARY ROM CONFIG'
 binary="$(realpath -- "$1")"
 rom="$(realpath -- "$2")"
-data_dir="$(realpath -- "$3")"
+config="$(realpath -- "$3")"
 [[ -x "$binary" ]] || fail "not executable: $binary"
 [[ -f "$rom" && -r "$rom" ]] || fail "ROM must be a readable regular file: $rom"
-[[ -d "$data_dir" && -w "$data_dir" && -x "$data_dir" ]] || fail "data root must be writable: $data_dir"
+[[ -f "$config" && -r "$config" ]] || fail "config must be a readable regular file: $config"
 [[ "$(uname -m)" == aarch64 ]] || fail 'run this acceptance script on ARM64 Linux; cross binaries are not executed on amd64'
 
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
-validation="$root/build/validation/us1"
+validation="$root/build/validation/config"
 mkdir -p "$validation"
 log="$validation/run-$(date -u +%Y%m%dT%H%M%SZ).log"
-runner() { "$binary" "$@"; }
+runner() { "$binary" --config "$config" "$@"; }
 expect_code() {
     local expected="$1"; shift
     local actual=0
@@ -30,24 +30,29 @@ expect_code 2 --frames nope "$rom"
 expect_code 2 --frames 18446744073709551616 "$rom"
 expect_code 2 --frames 1 --frames 2 "$rom"
 expect_code 2 --unknown "$rom"
-expect_code 2 --frames 1 "$data_dir"
-expect_code 2 --data-dir "$data_dir/missing" "$rom"
+expect_code 2 --frames 1 "$config"
+expect_code 2 --bios-arm7 "$rom"
 
 # Missing BIOS files used to unwind through an uninitialized jump buffer.
-missing_bios_dir="$(mktemp -d "$validation/missing-bios.XXXXXX")"
-trap 'rm -rf -- "$missing_bios_dir"' EXIT
+missing_config="$validation/missing-bios.json"
+python3 - "$config" "$missing_config" <<'PYCFG'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as f: data=json.load(f)
+data["firmware"]["bios_arm7"]="/seedlessds-missing/arm7.bin"
+data["firmware"]["bios_arm9"]="/seedlessds-missing/arm9.bin"
+with open(sys.argv[2], "w", encoding="utf-8") as f: json.dump(data, f)
+PYCFG
 missing_output="$validation/missing-bios.out"
 missing_code=0
-timeout --signal=TERM --kill-after=1s 30s "$binary" --data-dir "$missing_bios_dir" --frames 1 "$rom" >"$missing_output" 2>&1 || missing_code=$?
+timeout --signal=TERM --kill-after=1s 30s "$binary" --config "$missing_config" --frames 1 "$rom" >"$missing_output" 2>&1 || missing_code=$?
 [[ "$missing_code" == 1 ]] || fail "missing BIOS run returned $missing_code, expected 1"
-rg -q '^result=failed frames=0 operation=bios$' "$missing_output" || fail 'missing BIOS failure record is missing'
-rg -q 'BIOS arm9 missing or invalid:' "$missing_output" || fail 'missing ARM9 BIOS diagnostic is missing'
-rg -q 'BIOS arm7 missing or invalid:' "$missing_output" || fail 'missing ARM7 BIOS diagnostic is missing'
+rg -q '^result=failed frames=0 operation=firmware$' "$missing_output" || fail 'missing BIOS failure record is missing'
+rg -q 'firmware.bios_arm9: BIOS must be readable' "$missing_output" || fail 'missing ARM9 BIOS diagnostic is missing'
 if rg -q 'core initialization completed|ROM load started' "$missing_output"; then fail 'core started despite missing BIOS'; fi
 
 bounded() {
     local count="$1"; local output="$validation/frames-$count.out"; local code=0
-    timeout --signal=TERM --kill-after=1s 30s "$binary" --data-dir "$data_dir" --frames "$count" "$rom" >"$output" 2>>"$log" || code=$?
+    timeout --signal=TERM --kill-after=1s 30s "$binary" --config "$config" --frames "$count" "$rom" >"$output" 2>>"$log" || code=$?
     [[ "$code" == 0 ]] || fail "bounded run $count failed with exit $code (see $output and $log)"
     rg -q "^result=completed frames=$count requested=$count$" "$output" || \
         fail "bounded run $count did not report the exact scheduler target"
@@ -58,7 +63,7 @@ for _ in 1 2 3; do bounded 120; done
 
 interrupt_run() {
     local signal_name="$1"; local expected="$2"; local output="$validation/$signal_name.out"
-    runner --data-dir "$data_dir" "$rom" >"$output" 2>>"$log" &
+    runner "$rom" >"$output" 2>>"$log" &
     local pid=$!; local deadline=$((SECONDS + 5))
     sleep 1
     kill -s "$signal_name" "$pid" 2>/dev/null || true

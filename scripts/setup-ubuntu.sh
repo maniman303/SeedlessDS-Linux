@@ -8,10 +8,10 @@ Usage: bash scripts/setup-ubuntu.sh (--native|--cross) [--check|--dry-run]
   --native   Prepare an ARM64 Ubuntu host to build and run natively.
   --cross    Prepare an amd64 Ubuntu host to cross-build for ARM64 Linux.
   --check    Verify prerequisites and compile/link a temporary ARM64 probe.
-  --dry-run  Print the package installation commands without changing the host.
+  --dry-run  Print manual package guidance without changing the host.
 
-With neither --check nor --dry-run, install the packages using apt. Setup is
-limited to Ubuntu 24.04/26.04 and never edits apt sources or enables multiarch.
+Package installation is deliberately manual. Setup is limited to Ubuntu
+24.04/26.04 and never edits apt sources or enables multiarch.
 USAGE
 }
 
@@ -21,7 +21,7 @@ fail() {
 }
 
 mode=''
-action='install'
+action='check'
 while (($#)); do
     case "$1" in
         --native|--cross)
@@ -29,7 +29,7 @@ while (($#)); do
             mode="${1#--}"
             ;;
         --check|--dry-run)
-            [[ "$action" == install ]] || fail 'choose at most one of --check or --dry-run'
+            [[ "$action" == check ]] || fail 'choose at most one of --check or --dry-run'
             action="${1#--}"
             ;;
         --help|-h)
@@ -61,7 +61,7 @@ esac
 common_packages=(build-essential cmake ninja-build git pkg-config ca-certificates curl sshpass
     xz-utils bzip2 unzip python3 shellcheck file binutils openssh-client)
 if [[ "$mode" == native ]]; then
-    packages=("${common_packages[@]}" gdb)
+    packages=("${common_packages[@]}" gdb libsdl2-dev)
     cc=gcc
     readelf=readelf
 else
@@ -76,22 +76,13 @@ printf 'Ubuntu: %s (%s), host architecture: %s, mode: %s, target: aarch64-linux-
 printf 'Packages: %s\n' "${packages[*]}"
 
 if [[ "$action" == dry-run ]]; then
-    printf 'Would run: sudo apt-get update\n'
-    printf 'Would run: sudo apt-get install --no-install-recommends %s\n' "${packages[*]}"
-    exit 0
-fi
-
-if [[ "$action" == install ]]; then
-    if ((EUID == 0)); then
-        apt=(apt-get)
-    elif command -v sudo >/dev/null 2>&1; then
-        apt=(sudo apt-get)
+    printf 'Manually install host packages if needed: %s\n' "${packages[*]}"
+    if [[ "$mode" == native ]]; then
+        printf 'Native SDL2 development package: libsdl2-dev (SDL2 >= 2.0.12).\n'
     else
-        fail 'install mode needs root or sudo; rerun as root or configure a narrowly scoped package-install privilege wrapper'
+        printf 'Provision SDL2 >= 2.0.12 and its graphics/backend dependencies in the AArch64 sysroot; do not use host SDL packages.\n'
     fi
-    "${apt[@]}" update || fail 'apt-get update failed; check network access and configured Ubuntu repositories'
-    "${apt[@]}" install --no-install-recommends -y "${packages[@]}" || \
-        fail "package installation failed; check that Ubuntu ${VERSION_ID} repositories provide: ${packages[*]}"
+    exit 0
 fi
 
 missing=()
@@ -100,6 +91,20 @@ for command_name in cmake ninja git pkg-config curl python3 shellcheck file ssh 
 done
 command -v "$cc" >/dev/null 2>&1 || missing+=("$cc")
 ((${#missing[@]} == 0)) || fail "required tools are missing: ${missing[*]}; run the installer or check Ubuntu repositories"
+
+if [[ "$mode" == cross ]]; then
+    target_sysroot="${SEEDLESS_TARGET_SYSROOT:-/usr/aarch64-linux-gnu}"
+    [[ -d "$target_sysroot" ]] || fail "AArch64 sysroot is unavailable: $target_sysroot"
+    export PKG_CONFIG_SYSROOT_DIR="$target_sysroot"
+    export PKG_CONFIG_LIBDIR="$target_sysroot/usr/lib/aarch64-linux-gnu/pkgconfig:$target_sysroot/usr/lib/pkgconfig:$target_sysroot/usr/share/pkgconfig:$target_sysroot/lib/aarch64-linux-gnu/pkgconfig"
+fi
+
+if ! pkg-config --atleast-version=2.0.12 sdl2; then
+    if [[ "$mode" == native ]]; then
+        fail 'SDL2 >= 2.0.12 development files are required; manually install libsdl2-dev, confirm success, then rerun --check'
+    fi
+    fail 'target SDL2 >= 2.0.12 is not visible through target pkg-config; configure the AArch64 sysroot/pkg-config environment, then rerun --check'
+fi
 
 cmake_version="$(cmake --version | awk 'NR == 1 { print $3 }')"
 python3 - "$cmake_version" <<'PY' || exit 1

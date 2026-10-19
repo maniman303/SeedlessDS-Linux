@@ -65,17 +65,10 @@ for relative, pin in submodules.items():
         if result.returncode == 0:
             cache_commit = result.stdout.strip()
     if cache_commit != pinned:
-        if cache.exists():
-            shutil.rmtree(cache)
-        with tempfile.TemporaryDirectory(prefix='.submodule-fetch-', dir=cache.parent) as temporary:
-            fetched = Path(temporary) / 'checkout'
-            clone = run(['git', 'clone', '--no-checkout', pin['url'], str(fetched)], check=False)
-            if clone.returncode:
-                raise SystemExit(f"prepare-core: ERROR: could not fetch {relative} from {pin['url']}:\n{clone.stderr}")
-            checkout = run(['git', '-C', str(fetched), 'checkout', '--detach', pinned], check=False)
-            if checkout.returncode:
-                raise SystemExit(f'prepare-core: ERROR: could not check out pinned {relative} commit {pinned}:\n' + checkout.stderr)
-            os.replace(fetched, cache)
+        raise SystemExit(
+            f'prepare-core: ERROR: required local submodule/cache is unavailable or not pinned: '
+            f'{relative}; initialize it manually or provide {cache} at {pinned}'
+        )
     if run(['git', '-C', str(cache), 'rev-parse', 'HEAD']).stdout.strip() != pinned:
         raise SystemExit(f'prepare-core: ERROR: cached {relative} does not match pinned commit {pinned}')
 
@@ -114,8 +107,8 @@ with tempfile.TemporaryDirectory(prefix='.core-src-stage-', dir=build_root) as t
         digest = hashlib.sha256(patch.read_bytes()).hexdigest()
         if digest != entry['sha256']:
             raise SystemExit(f"prepare-core: ERROR: patch hash mismatch for {entry['file']}")
-        run(['git', 'apply', '--check', '--verbose', str(patch)], cwd=staged)
-        run(['git', 'apply', '--verbose', str(patch)], cwd=staged)
+        run(['patch', '-p1', '--dry-run', '--forward', '--input', str(patch)], cwd=staged)
+        run(['patch', '-p1', '--forward', '--input', str(patch)], cwd=staged)
     if destination.exists():
         shutil.rmtree(destination)
     os.replace(staged, destination)

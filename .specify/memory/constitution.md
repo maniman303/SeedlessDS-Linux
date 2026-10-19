@@ -1,9 +1,9 @@
 <!--
 Sync Impact Report
-Version change: 1.1.0 → 1.2.0 (new non-negotiable agent Git and GitHub restrictions)
-Modified principles: None; existing principles preserved.
-Added sections: VI. Local Git Only; No Agent Commits or GitHub Actions.
-Modified sections: Development Workflow and Governance (restriction enforcement).
+Version change: 1.2.0 → 1.3.0 (require local builds before SSH device validation)
+Modified principles: V. Hardware-Based Debugging and Credential Safety.
+Added sections: None.
+Modified sections: Development Workflow (local build and SSH validation sequence); Governance unchanged.
 Removed sections: None
 Follow-up TODOs: Confirm the original ratification date when project history provides it.
 -->
@@ -39,10 +39,16 @@ and architecture reduces host-specific build failures.
 
 ### V. Hardware-Based Debugging and Credential Safety
 Final device debugging and validation MUST be performed on real ARM64 Linux hardware, accessed
-over SSH where supported. A developer-local, git-ignored configuration MAY hold device addresses
-and connection settings. Credentials MUST NOT be committed, logged, or stored as plaintext in
-tracked files; SSH keys or an SSH agent SHOULD be used for authentication. Hardware-specific
-issues MUST be recorded with enough device and environment detail to reproduce them.
+over SSH where supported. Agents MUST build the current worktree locally in its intended Linux
+environment before device validation; on an x86-64 host, use the ARM64 cross-build. Agents MUST
+transfer the resulting executable to the device over SSH and run/debug that binary there, and
+MUST NOT build the project on the device or transfer source for a remote build. A developer-local,
+git-ignored configuration MAY hold device addresses and connection settings. Credentials MUST NOT
+be committed, logged, or stored as plaintext in tracked files; SSH keys or an SSH agent SHOULD be
+used for authentication. Hardware-specific issues MUST be recorded with enough device and
+environment detail to reproduce them. SSH device access is for artifact transfer, application
+execution, diagnostics, and necessary asset checks; it does not permit remote Git or GitHub
+operations, commits, pushes, or sudo operations.
 
 ### VI. Local Git Only; No Agent Commits or GitHub Actions
 All agents MUST operate locally and MUST NOT attempt any GitHub action, including read-only
@@ -82,10 +88,15 @@ action prohibited by Principle VI. Prohibited steps MUST be skipped and reported
 work MUST continue where independent of those steps.
 
 Changes MUST preserve the principles above. Each change MUST be built in its intended Linux build
-environment before it is considered ready. Changes to display handling MUST be checked for both
-dual-screen and single-screen behavior. Device-dependent behavior MUST be validated on real
-hardware over SSH when applicable. Reviews MUST identify any exception to these constraints and
-document its reason and scope.
+environment before it is considered ready. For device run/debug work, agents MUST first build
+locally, then transfer the executable over SSH and run/debug it on the device; remote compilation
+is prohibited. Where available, use the repository deployment helper to retain binary-integrity
+checks, host verification, and diagnostic capture. Reports MUST distinguish local build and
+deployment success from successful application or emulation execution, and state when missing
+device inputs prevent a full run. Changes to display handling MUST be checked for both dual-screen
+and single-screen behavior. Device-dependent behavior MUST be validated on real hardware over SSH
+when applicable. Reviews MUST identify any exception to these constraints and document its reason
+and scope.
 
 All tasks, agents, scripts, and automated workflows MUST stop before an operation that requires
 `sudo`. The agent or workflow MUST explain why elevated privileges are needed, provide the exact
@@ -115,4 +126,4 @@ approved exception and its rationale. Principle VI permits no exceptions under t
 its restrictions require an explicit constitutional amendment to change. Compliance reviews MUST
 check agent tool use and Git operations against Principle VI.
 
-**Version**: 1.2.0 | **Ratified**: TODO(RATIFICATION_DATE): original adoption date is unknown | **Last Amended**: 2026-10-19
+**Version**: 1.3.0 | **Ratified**: TODO(RATIFICATION_DATE): original adoption date is unknown | **Last Amended**: 2026-10-19

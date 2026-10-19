@@ -4,7 +4,7 @@ All design unknowns are resolved below. Repository scripts are the authority for
 
 ## Configuration format and creation
 
-- Decision: JSON with exactly `ip_address`, `root_password`, and `install_dir`; tracked `.device.example.json`, ignored `.device.local`. Use Python JSON parsing, ipaddress validation, and POSIX path checks. Create atomically with mode 0600 after the implementer explicitly requests all three real values; never overwrite existing settings silently.
+- Decision: JSON with exactly `ip_address`, `root_password`, `install_dir`, and `rom_dir`; tracked `.device.example.json`, ignored `.device.local`. Use Python JSON parsing, ipaddress validation, and POSIX path checks. Create atomically with mode 0600 after the implementer explicitly requests the three connection/install values and the ROM directory; never overwrite existing settings silently. If `--rom` is omitted, select the first readable `.nds` in `rom_dir`.
 - Rationale: Existing `.gitignore` already excludes `.device.local` and its suffixes. JSON preserves spaces, quotes and shell metacharacters without sourcing executable shell assignments. Ubuntu setup already provides Python.
 - Alternatives considered: Sourced shell config permits execution and fragile escaping; a new configuration library adds no needed capability. Secret vaults would change the requested local-password workflow.
 - Restriction: Password is nonempty, nonplaceholder, no NUL/CR/LF; line-based sshpass input cannot faithfully carry line terminators. Preserve all other characters exactly. Reject unsupported input without printing it.
@@ -27,7 +27,7 @@ All design unknowns are resolved below. Repository scripts are the authority for
 
 - Decision: Require existing device-local absolute ROM and writable data-root paths, supplied separately as CLI arguments. Default to 120 frames and a bounded remote timeout, preserving runner output and exit status. Do not upload or generate runtime assets implicitly. Verify final result record matches requested frames and zero runner exit before reporting success.
 - Rationale: Existing runner supports these inputs and deterministic scheduler bounds. A transport failure and application failure must remain distinguishable; obtain a separate remote wrapper exit marker, and treat absent marker/disconnect as unconfirmed execution.
-- Alternatives considered: An unbounded default risks unattended execution; embedding ROM paths in the three-field device config expands its scope. Existing `validate-headless.sh` is optional deeper validation, requiring Bash, ripgrep and timeout on the target; it is not required by this lightweight deployment path.
+- Alternatives considered: An unbounded default risks unattended execution; a ROM directory in the device config avoids repeating a target path while leaving per-run `--rom` selection available. Existing `validate-headless.sh` is optional deeper validation, requiring Bash, ripgrep and timeout on the target; it is not required by this lightweight deployment path.
 
 ## Build documentation baseline
 

@@ -21,6 +21,8 @@
 *.firmware
 
 # Editor and temporary files
+__pycache__/
+*.pyc
 .DS_Store
 Thumbs.db
 *.tmp

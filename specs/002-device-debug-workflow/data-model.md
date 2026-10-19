@@ -4,8 +4,8 @@ These are local files and in-memory workflow records; no database or migration i
 
 | Entity | Fields and validation | Relationships |
 |---|---|---|
-| LocalDebugConfiguration | `ip_address`: literal IPv4/IPv6, no hostname/port; `root_password`: nonempty nonplaceholder string, no NUL/CR/LF, preserve whitespace and special characters; `install_dir`: absolute POSIX directory, no control characters, reject `/` and traversal components | One console per invocation; loaded from owner-only ignored `.device.local` |
-| ConfigurationTemplate | Same three keys with explicit placeholder strings, no real device values | Tracked `.device.example.json`; never accepted as valid config |
+| LocalDebugConfiguration | `ip_address`: literal IPv4/IPv6, no hostname/port; `root_password`: nonempty nonplaceholder string, no NUL/CR/LF, preserve whitespace and special characters; `install_dir`: absolute POSIX directory, no control characters, reject `/` and traversal components; `rom_dir`: absolute POSIX device directory, no control characters or traversal components | One console per invocation; loaded from owner-only ignored `.device.local`; default ROM selection uses the first readable `.nds` file in `rom_dir` |
+| ConfigurationTemplate | Same four keys with explicit placeholder strings, no real device values | Tracked `.device.example.json`; never accepted as valid config |
 | BuildArtifact | Local regular readable ELF path, AArch64 machine, SHA-256, size, interpreter, shared dependencies, required GLIBC versions, matching inventory path | Exactly one artifact per session, tied to current bytes through audit/hash |
 | RuntimeInputs | Device-local absolute ROM path and existing writable data directory; frames integer 1..UINT64_MAX; timeout positive seconds | Passed to unchanged runner CLI, never embedded in tracked config |
 | Deployment | Session id, temporary remote filename, final filename, expected and received SHA-256, promotion status | Artifact deployed within configured install directory |
