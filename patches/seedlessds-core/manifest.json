@@ -177,6 +177,11 @@
       "file": "0004-posix-path-safety.patch",
       "sha256": "fe6005f618f90316e7daf1f6469854c96c85f0b33e2e30ad7b065da4d94eb048",
       "purpose": "Reject truncated core data paths, propagate parent-directory failures and clean partial POSIX descriptor allocations."
+    },
+    {
+      "file": "0005-startup-unwind.patch",
+      "sha256": "8877daf1810ae85b75aefedfb8930349c0b617d2518d52125b41b247dc9e75de",
+      "purpose": "Initialize the startup unwind target before BIOS/memory setup, use compiler-recognized setjmp calls, and diagnose missing or incorrectly sized BIOS assets."
     }
   ],
   "notes": "Explicit source inventory captured from the pinned core revision; update requires review when this list changes."

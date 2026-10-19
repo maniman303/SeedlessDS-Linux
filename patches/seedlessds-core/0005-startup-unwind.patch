@@ -1,0 +1,72 @@
+--- a/src/core/nds.c
++++ b/src/core/nds.c
+@@ -21,13 +21,11 @@
+ #include "core_internals.h"
+ #include "mem_access.h"
+ static int (*core_mprotect)(void *, size_t, int);
+-static int (*core_setjmp)(void *);
+ extern jmp_buf seedlessds_linux_fatal_jump;
+ 
+ int nds_start_game(nds_start_params_t *params) {
+     if (!core_mprotect) {
+         core_mprotect = (int (*)(void *, size_t, int))sym_libc_mprotect;
+-        core_setjmp   = (int (*)(void *))sym_libc__setjmp;
+     }
+     unsigned char *G = (unsigned char *)&nds_machine;
+     platform_audio_t *ctl = PLATFORM_AUDIO;
+@@ -47,6 +45,11 @@
+     arm(((nds_t *)G)->save_dir, 0, fmt, params->save_dir);
+ 
+     ((nds_t *)G)->bus.address_window = (uint8_t *)(uintptr_t)(uint64_t)-1;
++    /* Initialization can unwind before the emulation loop is entered. */
++    if (setjmp(seedlessds_linux_fatal_jump) != 0) {
++        ctl->restart_pending = 0;
++        return -1;
++    }
+     nds_machine_init(G);
+ 
+     uint32_t mode = params->texture_format;
+@@ -77,7 +80,10 @@
+     video_out_gl_init_hook_noop();
+     nds_machine_reset(G);
+ 
+-    core_setjmp(seedlessds_linux_fatal_jump);
++    /* Direct setjmp exposes returns-twice semantics to the compiler. */
++    if (setjmp(seedlessds_linux_fatal_jump) != 0) {
++        if (ctl->restart_pending == 1) { ctl->restart_pending = 0; return 0; }
++    }
+ 
+     if (ctl->restart_pending == 1) { ctl->restart_pending = 0; return 0; }
+ 
+--- a/src/memory/mirror.c
++++ b/src/memory/mirror.c
+@@ -1,4 +1,5 @@
+ #include <stdint.h>
++#include <stdio.h>
+ #include "hires_runtime.h"
+ #include "blob_symbols.h"
+ #include "core/nds_state.h"
+@@ -532,7 +533,10 @@
+         int r = read_exact_size(pcpu, DATA_BIOS9_REAL, bus->bios9, (uint32_t)sizeof bus->bios9);
+         if (r < 0) {
+             r = read_exact_size(pcpu, DATA_BIOS9_REPLACEMENT, bus->bios9, (uint32_t)sizeof bus->bios9);
+-            if (r < 0) { return -1; }
++            if (r < 0) {
++                fprintf(stderr, "seedlessds[error]: BIOS ARM9: provide system/nds_bios_arm9.bin or system/nds_bios_arm9_replacement.bin with the required size (4096 bytes) under --data-dir\n");
++                return -1;
++            }
+             *flags |= 0x2;
+         }
+     }
+@@ -541,7 +545,10 @@
+         int r = read_exact_size(pcpu, DATA_BIOS7_REAL, bus->bios7, (uint32_t)sizeof bus->bios7);
+         if (r < 0) {
+             r = read_exact_size(pcpu, DATA_BIOS7_REPLACEMENT, bus->bios7, (uint32_t)sizeof bus->bios7);
+-            if (r < 0) { return -1; }
++            if (r < 0) {
++                fprintf(stderr, "seedlessds[error]: BIOS ARM7: provide system/nds_bios_arm7.bin or system/nds_bios_arm7_replacement.bin with the required size (16384 bytes) under --data-dir\n");
++                return -1;
++            }
+             *flags |= 0x1;
+         }
+     }

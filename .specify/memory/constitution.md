@@ -1,10 +1,9 @@
 <!--
 Sync Impact Report
-Version change: 1.0.0 → 1.1.0 (expanded development workflow requirements)
-Modified principles:
-- None; existing core principles preserved.
-Modified sections: Development Workflow (sudo handoff and Linux terminal commands).
-Added sections: None
+Version change: 1.1.0 → 1.2.0 (new non-negotiable agent Git and GitHub restrictions)
+Modified principles: None; existing principles preserved.
+Added sections: VI. Local Git Only; No Agent Commits or GitHub Actions.
+Modified sections: Development Workflow and Governance (restriction enforcement).
 Removed sections: None
 Follow-up TODOs: Confirm the original ratification date when project history provides it.
 -->
@@ -45,6 +44,29 @@ and connection settings. Credentials MUST NOT be committed, logged, or stored as
 tracked files; SSH keys or an SSH agent SHOULD be used for authentication. Hardware-specific
 issues MUST be recorded with enough device and environment detail to reproduce them.
 
+### VI. Local Git Only; No Agent Commits or GitHub Actions
+All agents MUST operate locally and MUST NOT attempt any GitHub action, including read-only
+GitHub access. This prohibition includes GitHub websites, APIs, CLI commands, connectors, and
+integrations; issues, pull requests, comments, reviews, releases, repository settings, and GitHub
+Actions workflows MUST NOT be accessed, created, modified, triggered, or otherwise operated by
+agents.
+
+Agents MUST NOT create any Git commit, including local commits, amended commits, or commits
+created indirectly by merge, rebase, cherry-pick, scripts, or other commands. Agents MUST NOT
+push anything to `origin` or any other remote, including branches, tags, commits, or other refs.
+Agents MUST NOT perform other remote Git operations, including clone, fetch, or pull. Local Git
+inspection, diffs, staging, and branch or worktree operations MAY be used only when they do not
+create commits, contact remotes, or perform a GitHub action. Rationale: the user retains exclusive
+control over commits and all remote repository activity.
+
+These restrictions apply to every agent, delegated agent, script, hook, skill, tool, connector,
+and automated workflow acting on an agent's behalf. Agents MUST NOT attempt a prohibited action,
+request tool approval for it, or bypass the restriction through another tool, transport, account,
+remote name, or intermediary. A conflicting task, template, skill, hook, or workflow MUST be
+skipped for the prohibited action, and the agent MUST report the conflict. No routine exception
+or general approval overrides this principle; changing it requires an explicit amendment to this
+constitution.
+
 ## Platform and Build Constraints
 
 The supported baseline is Linux on ARM64. SDL2 and SDL3 are the preferred portable platform
@@ -54,6 +76,10 @@ libraries and ARM64 toolchain; optional device-specific integrations MUST NOT be
 basic single-screen frontend to launch.
 
 ## Development Workflow
+
+Before invoking a tool, script, hook, or workflow, agents MUST check that it cannot perform an
+action prohibited by Principle VI. Prohibited steps MUST be skipped and reported; permitted local
+work MUST continue where independent of those steps.
 
 Changes MUST preserve the principles above. Each change MUST be built in its intended Linux build
 environment before it is considered ready. Changes to display handling MUST be checked for both
@@ -85,6 +111,8 @@ governance, MINOR for new or materially expanded principles or sections, and PAT
 clarity changes that do not change requirements. The constitution MUST be reviewed when a change
 affects platform support, core integration, build workflows, display support, or hardware access.
 Contributors and reviewers MUST check proposed work against these principles and document any
-approved exception and its rationale.
+approved exception and its rationale. Principle VI permits no exceptions under this process;
+its restrictions require an explicit constitutional amendment to change. Compliance reviews MUST
+check agent tool use and Git operations against Principle VI.
 
-**Version**: 1.1.0 | **Ratified**: TODO(RATIFICATION_DATE): original adoption date is unknown | **Last Amended**: 2026-10-19
+**Version**: 1.2.0 | **Ratified**: TODO(RATIFICATION_DATE): original adoption date is unknown | **Last Amended**: 2026-10-19

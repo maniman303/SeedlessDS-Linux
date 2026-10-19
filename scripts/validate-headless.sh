@@ -33,6 +33,18 @@ expect_code 2 --unknown "$rom"
 expect_code 2 --frames 1 "$data_dir"
 expect_code 2 --data-dir "$data_dir/missing" "$rom"
 
+# Missing BIOS files used to unwind through an uninitialized jump buffer.
+missing_bios_dir="$(mktemp -d "$validation/missing-bios.XXXXXX")"
+trap 'rm -rf -- "$missing_bios_dir"' EXIT
+missing_output="$validation/missing-bios.out"
+missing_code=0
+timeout --signal=TERM --kill-after=1s 30s "$binary" --data-dir "$missing_bios_dir" --frames 1 "$rom" >"$missing_output" 2>&1 || missing_code=$?
+[[ "$missing_code" == 1 ]] || fail "missing BIOS run returned $missing_code, expected 1"
+rg -q '^result=failed frames=0 operation=bios$' "$missing_output" || fail 'missing BIOS failure record is missing'
+rg -q 'BIOS arm9 missing or invalid:' "$missing_output" || fail 'missing ARM9 BIOS diagnostic is missing'
+rg -q 'BIOS arm7 missing or invalid:' "$missing_output" || fail 'missing ARM7 BIOS diagnostic is missing'
+if rg -q 'core initialization completed|ROM load started' "$missing_output"; then fail 'core started despite missing BIOS'; fi
+
 bounded() {
     local count="$1"; local output="$validation/frames-$count.out"; local code=0
     timeout --signal=TERM --kill-after=1s 30s "$binary" --data-dir "$data_dir" --frames "$count" "$rom" >"$output" 2>>"$log" || code=$?

@@ -61,6 +61,18 @@ def emit(stage, status, message):
         temporary.replace(target)
 
 
+def diagnostic_tail(output):
+    """Return a short, terminal-safe tail for local evidence and failure output."""
+    output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", output)
+    output = "".join(char if char in "\n\t" or ord(char) >= 32 else "?" for char in output)
+    lines = output.splitlines()[-32:]
+    return "\n".join(lines)[-4096:]
+
+
+def sanitized_diagnostic_tail(output, redactor):
+    return diagnostic_tail(redactor.clean(output))
+
+
 def default_config():
     return ROOT / ".device.local"
 
@@ -284,6 +296,7 @@ def main():
     data_dir = args.data_dir
     if not Path(rom).is_absolute() or not Path(data_dir).is_absolute():
         raise Failure(2, "arguments", "ROM and data directory must be absolute target paths")
+    redactor = Redactor([config[k] for k in CONFIG_KEYS] + [rom, data_dir])
     artifact = audit(args.binary, args.inventory)
     EVIDENCE["artifact_sha256"] = artifact["sha256"]
     EVIDENCE["preset"] = artifact["inventory"].get("preset")
@@ -340,12 +353,23 @@ def main():
     output = re.sub(r"^.*__SEEDLESS_WRAPPER_" + marker_token + r"__:\d+.*(?:\n|$)", "", output, flags=re.M)
     record = re.search(rf"result=completed frames={args.frames} requested={args.frames}(?:\r?\n|$)", output)
     if result.returncode == 255 or not marker:
+        EVIDENCE["transport_exit"] = result.returncode
+        tail = sanitized_diagnostic_tail(output, redactor)
+        if tail:
+            EVIDENCE["runner_diagnostics"] = tail
+            print("sanitized remote diagnostics:", file=sys.stderr)
+            print(tail, file=sys.stderr)
         raise Failure(7, "execution", "execution completion is unconfirmed; no valid wrapper status received")
     EVIDENCE["runner_exit"] = int(marker.group(1))
     EVIDENCE["transport_exit"] = result.returncode
     EVIDENCE["result"] = record.group(0).strip() if record else "missing_or_invalid"
     if int(marker.group(1)) or not record:
-        raise Failure(6, "execution", "runner failed, timed out, or returned an invalid bounded result")
+        tail = sanitized_diagnostic_tail(output, redactor)
+        if tail:
+            EVIDENCE["runner_diagnostics"] = tail
+            print("sanitized remote diagnostics:", file=sys.stderr)
+            print(tail, file=sys.stderr)
+        raise Failure(6, "execution", f"runner exit={marker.group(1)}; exact bounded completion record is missing")
     emit("execution", "passed", f"runner exit=0 result=completed frames={args.frames} requested={args.frames}")
     print(output, end="" if output.endswith("\n") else "\n")
     return 0
