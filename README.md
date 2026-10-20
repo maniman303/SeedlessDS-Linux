@@ -1,6 +1,14 @@
 # SeedlessDS-Linux
 
-SeedlessDS-Linux builds a Linux ARM64 frontend around the pinned SeedlessDS-Core. Video is presented fullscreen through SDL2; audio output and microphone input are discarded.
+SeedlessDS-Linux builds a Linux ARM64 frontend around the pinned SeedlessDS-Core. Video is presented fullscreen through SDL2.
+
+## Status
+
+This project started as a gateway to vibe coding, to try out Codex and its capabilities. Right now it can - if bios files are provided via a path in config - load a rom and output its video on a dual screen device, like a RG DS Plus with Rockinx. Bios files are not included (drastic or real bios dumps work), and single screen devices are not tested.
+
+Anything other then video output - audio, mic, controls, menu, proper saving, save states management etc - is not implemented.
+
+The chance this project will be in any shape continued are slim, to put it lightly - use superior [DSperate](https://github.com/beebono/DSperate) instead. But anyone is free to fork away and continue this project.
 
 ## Build
 
