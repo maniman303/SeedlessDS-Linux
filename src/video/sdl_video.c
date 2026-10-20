@@ -1,9 +1,13 @@
 #include "sdl_video.h"
 #include <SDL.h>
+#include <errno.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 typedef struct seedless_sdl_video_impl {
     seedless_video_display_t displays[SEEDLESS_VIDEO_MAX_OUTPUTS];
@@ -79,6 +83,58 @@ static void select_default_video_driver(void)
     }
 }
 
+/* Rocknix's Sway session can leave the lower DSI output powered off while
+   still advertising it to SDL. Ask Sway to power on each named output before
+   creating fullscreen windows; other Wayland compositors are unaffected. */
+static void enable_sway_output(const char *display_name)
+{
+    char output_name[128];
+    const char *open = display_name ? strrchr(display_name, '(') : NULL;
+    const char *close = display_name ? strrchr(display_name, ')') : NULL;
+    if (open && close && close > open + 1) {
+        size_t length = (size_t)(close - open - 1);
+        if (length >= sizeof output_name) length = sizeof output_name - 1;
+        memcpy(output_name, open + 1, length);
+        output_name[length] = '\0';
+    } else if (display_name && display_name[0] && strcmp(display_name, "unknown")) {
+        snprintf(output_name, sizeof output_name, "%s", display_name);
+    } else {
+        return;
+    }
+
+    const char *socket_path = getenv("SWAYSOCK");
+    char inferred_socket[512];
+    if (!socket_path || !socket_path[0] || access(socket_path, F_OK) != 0) {
+        const char *runtime_dir = getenv("XDG_RUNTIME_DIR");
+        if (!runtime_dir || !runtime_dir[0]) return;
+        snprintf(inferred_socket, sizeof inferred_socket,
+                 "%s/sway-ipc.%lu.sock", runtime_dir, (unsigned long)getuid());
+        socket_path = inferred_socket;
+    }
+    if (access(socket_path, F_OK) != 0) return;
+
+    pid_t child = fork();
+    if (child == 0) {
+        char *const argv[] = {"swaymsg", "-s", (char *)socket_path, "output",
+                              output_name, "power", "on", NULL};
+        execvp(argv[0], argv);
+        _exit(127);
+    }
+    if (child < 0) {
+        fprintf(stderr, "seedlessds[video]: could not request Sway power-on for %s\n", output_name);
+        return;
+    }
+    int status = 0;
+    pid_t waited;
+    do {
+        waited = waitpid(child, &status, 0);
+    } while (waited < 0 && errno == EINTR);
+    if (waited == child && WIFEXITED(status) && WEXITSTATUS(status) == 0)
+        fprintf(stderr, "seedlessds[video]: Sway output power enabled name=%s\n", output_name);
+    else
+        fprintf(stderr, "seedlessds[video]: Sway did not enable output name=%s\n", output_name);
+}
+
 static int refresh_geometry(seedless_sdl_video_t *video,
                             char *error, size_t capacity)
 {
@@ -86,11 +142,9 @@ static int refresh_geometry(seedless_sdl_video_t *video,
     int geometry_changed = 0;
     for (unsigned i = 0; i < impl->texture_count; ++i) {
         Uint32 flags = SDL_GetWindowFlags(impl->windows[i]);
-        if (!(flags & SDL_WINDOW_FULLSCREEN))
-            return fail(error, capacity, "fullscreen state was lost");
         int actual_display = SDL_GetWindowDisplayIndex(impl->windows[i]);
         if (actual_display != (int)i)
-            return fail(error, capacity, "fullscreen window moved to another display");
+            return fail(error, capacity, "output window moved to another display");
         int width = 0, height = 0;
         if (impl->wayland_surface_presenter) {
             impl->surfaces[i] = SDL_GetWindowSurface(impl->windows[i]);
@@ -345,7 +399,8 @@ int seedless_sdl_video_init(seedless_sdl_video_t *video,
     impl->preferences = *preferences;
     print_version();
     const char *driver = SDL_GetCurrentVideoDriver();
-    impl->wayland_surface_presenter = driver && !strcmp(driver, "wayland");
+    const int wayland_driver = driver && !strcmp(driver, "wayland");
+    impl->wayland_surface_presenter = wayland_driver;
     if (!driver || !strcmp(driver, "dummy") || !strcmp(driver, "offscreen")) {
         if (error && error_capacity)
             snprintf(error, error_capacity,
@@ -387,36 +442,54 @@ int seedless_sdl_video_init(seedless_sdl_video_t *video,
         }
     }
 
+    if (wayland_driver) {
+        for (int i = 0; i < count && i < SEEDLESS_VIDEO_MAX_OUTPUTS; ++i)
+            enable_sway_output(impl->displays[i].name);
+    }
+
     impl->texture_count = preferences->requested_mode == SEEDLESS_VIDEO_MODE_SINGLE_SCREEN ||
                           count == 1 ? 1u : 2u;
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
     SDL_SetHint(SDL_HINT_RENDER_VSYNC, "0");
     for (unsigned i = 0; i < impl->texture_count; ++i) {
-        int width = 256, height = 192;
+        int width = SEEDLESS_VIDEO_SCREEN_WIDTH;
+        int height = SEEDLESS_VIDEO_SCREEN_HEIGHT;
+        Uint32 flags = SDL_WINDOW_FULLSCREEN_DESKTOP;
         impl->windows[i] = SDL_CreateWindow("SeedlessDS",
             SDL_WINDOWPOS_CENTERED_DISPLAY((int)i), SDL_WINDOWPOS_CENTERED_DISPLAY((int)i),
-            width, height, SDL_WINDOW_FULLSCREEN_DESKTOP);
+            width, height, flags);
         if (!impl->windows[i]) {
-            fail(error, error_capacity, "creating fullscreen output window failed");
+            fail(error, error_capacity, "creating output window failed");
             seedless_sdl_video_destroy(video);
             return 0;
         }
     }
 
-    /* Wayland applies fullscreen asynchronously. Wait for each window to
-       settle on its assigned output before creating its presentation surface. */
+    /* Wayland applies fullscreen placement asynchronously. The SDL window
+       surface's initial shm commit prompts xdg-shell configure; keep pumping
+       until the compositor has placed each full-size surface on its display. */
     for (unsigned i = 0; i < impl->texture_count; ++i) {
         int width = 0, height = 0, display_index = -1;
         Uint32 flags = 0;
         int attempts;
         for (attempts = 0; attempts < 200; ++attempts) {
+            if (impl->wayland_surface_presenter) {
+                SDL_Surface *surface = SDL_GetWindowSurface(impl->windows[i]);
+                if (surface && (SDL_FillRect(surface, NULL,
+                        SDL_MapRGB(surface->format, 0, 0, 0)) != 0 ||
+                    SDL_UpdateWindowSurface(impl->windows[i]) != 0)) {
+                    fail(error, error_capacity, "committing initial Wayland window surface failed");
+                    seedless_sdl_video_destroy(video);
+                    return 0;
+                }
+            }
             SDL_PumpEvents();
             display_index = SDL_GetWindowDisplayIndex(impl->windows[i]);
             flags = SDL_GetWindowFlags(impl->windows[i]);
             SDL_GetWindowSize(impl->windows[i], &width, &height);
-            if (display_index == (int)i && (flags & SDL_WINDOW_FULLSCREEN) &&
-                width >= impl->displays[i].desktop_width &&
-                height >= impl->displays[i].desktop_height)
+            if (display_index == (int)i &&
+                width == impl->displays[i].desktop_width &&
+                height == impl->displays[i].desktop_height)
                 break;
             SDL_Delay(10);
         }
@@ -428,7 +501,7 @@ int seedless_sdl_video_init(seedless_sdl_video_t *video,
                     flags);
             if (error && error_capacity)
                 snprintf(error, error_capacity,
-                         "fullscreen output %u did not configure on display %d at desktop size (%dx%d, got %dx%d)",
+                         "output window %u did not reach fullscreen size on display %d (%dx%d, got %dx%d)",
                          i, display_index, impl->displays[i].desktop_width,
                          impl->displays[i].desktop_height, width, height);
             seedless_sdl_video_destroy(video);
@@ -444,7 +517,8 @@ int seedless_sdl_video_init(seedless_sdl_video_t *video,
                 seedless_sdl_video_destroy(video);
                 return 0;
             }
-            int width = impl->surfaces[i]->w, height = impl->surfaces[i]->h;
+            int width = impl->surfaces[i]->w;
+            int height = impl->surfaces[i]->h;
             impl->displays[i].renderer_width_px = width;
             impl->displays[i].renderer_height_px = height;
             fprintf(stderr,
@@ -466,7 +540,20 @@ int seedless_sdl_video_init(seedless_sdl_video_t *video,
         }
         SDL_RendererInfo info = {0};
         int width = 0, height = 0;
-        SDL_GetRendererOutputSize(impl->renderers[i], &width, &height);
+        int attempts;
+        for (attempts = 0; attempts < 200; ++attempts) {
+            SDL_PumpEvents();
+            if (SDL_GetRendererOutputSize(impl->renderers[i], &width, &height) == 0 &&
+                width >= impl->displays[i].desktop_width &&
+                height >= impl->displays[i].desktop_height)
+                break;
+            SDL_Delay(10);
+        }
+        if (attempts == 200)
+            fprintf(stderr,
+                    "seedlessds[video]: renderer_size_pending output=%u renderer=%dx%d desktop=%dx%d\n",
+                    i, width, height, impl->displays[i].desktop_width,
+                    impl->displays[i].desktop_height);
         int pixel_width = 0, pixel_height = 0, drawable_width = 0, drawable_height = 0;
         SDL_GetWindowSizeInPixels(impl->windows[i], &pixel_width, &pixel_height);
         SDL_GL_GetDrawableSize(impl->windows[i], &drawable_width, &drawable_height);
@@ -491,8 +578,8 @@ int seedless_sdl_video_init(seedless_sdl_video_t *video,
         preferences->requested_mode != SEEDLESS_VIDEO_MODE_SINGLE_SCREEN)
         fprintf(stderr, "seedlessds[video]: dual output requested; using one-output fallback\n");
 
-    for (unsigned i = 0; !impl->wayland_surface_presenter &&
-                         i < video->layout.destination_count; ++i) {
+    for (unsigned i = 0; i < video->layout.destination_count; ++i) {
+        if (impl->wayland_surface_presenter) continue;
         impl->textures[i] = create_screen_texture(
             impl->renderers[video->layout.destinations[i].display_index],
             error, error_capacity);

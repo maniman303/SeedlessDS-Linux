@@ -187,6 +187,11 @@
       "file": "0006-frontend-config-paths.patch",
       "sha256": "a499d70eacbe406e1db779ba58e4914652f0fa6f0b9b49ac80615eecfd44128f",
       "description": "Expose explicit Linux BIOS, firmware, profile and direct raw-save paths through a stable frontend bridge."
+    },
+    {
+      "file": "0007-rgba-screen-channel-order.patch",
+      "sha256": "62d5383a66d1db680ddff345916761156c4e1ed877a5baaedfeb2c3bae7d5d6e",
+      "purpose": "Preserve the core software framebuffer RGBA channel order in screen and screenshot conversion."
     }
   ],
   "notes": "Explicit source inventory captured from the pinned core revision; update requires review when this list changes."
